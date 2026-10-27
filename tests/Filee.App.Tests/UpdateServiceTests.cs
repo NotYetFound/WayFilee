@@ -10,7 +10,6 @@ using System.Text;
 using System.Text.Json;
 using Avalonia.Headless.XUnit;
 using Filee.App.Services;
-using Filee.Platform.Windows;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Filee.App.Tests;
@@ -78,36 +77,16 @@ public class UpdateServiceTests
     {
         using var release = JsonDocument.Parse($$"""
             {"tag_name": "v9.9.9", "assets": [
-              {"name": "Filee-9.9.9-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-SHA256SUMS.txt"},
-              {"name": "Filee-9.9.9-win-Portable.zip", "size": 5, "browser_download_url": "{{Base}}Filee-9.9.9-win-Portable.zip"},
-              {"name": "Filee-9.9.9-win-Setup.exe", "size": 1234, "browser_download_url": "{{Base}}Filee-9.9.9-win-Setup.exe"}
-            ]}
-            """);
-
-        var (installer, checksums) = UpdateService.FindFiles(release.RootElement);
-
-        Assert.Equal(new UpdateService.ReleaseFile("Filee-9.9.9-win-Setup.exe", Base + "Filee-9.9.9-win-Setup.exe", 1234), installer);
-        Assert.Equal("Filee-9.9.9-SHA256SUMS.txt", checksums?.Name);
-    }
-
-    [Fact]
-    public void Release_files_picks_windows_installer_and_exact_checksums_even_when_linux_and_mac_are_present()
-    {
-        using var release = JsonDocument.Parse($$"""
-            {"tag_name": "v9.9.9", "assets": [
-              {"name": "Filee-9.9.9-linux-arm64-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-linux-arm64-SHA256SUMS.txt"},
               {"name": "Filee-9.9.9-linux-x64-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-linux-x64-SHA256SUMS.txt"},
-              {"name": "Filee-9.9.9-osx-arm64-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-osx-arm64-SHA256SUMS.txt"},
-              {"name": "Filee-9.9.9-osx-x64-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-osx-x64-SHA256SUMS.txt"},
-              {"name": "Filee-9.9.9-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-SHA256SUMS.txt"},
-              {"name": "Filee-9.9.9-win-Portable.zip", "size": 5000, "browser_download_url": "{{Base}}Filee-9.9.9-win-Portable.zip"},
-              {"name": "Filee-9.9.9-win-Setup.exe", "size": 6000, "browser_download_url": "{{Base}}Filee-9.9.9-win-Setup.exe"}
+              {"name": "Filee-9.9.9-linux-arm64.tar.gz", "size": 5, "browser_download_url": "{{Base}}Filee-9.9.9-linux-arm64.tar.gz"},
+              {"name": "Filee-9.9.9-linux-x64.tar.gz", "size": 1234, "browser_download_url": "{{Base}}Filee-9.9.9-linux-x64.tar.gz"}
             ]}
             """);
 
         var (installer, checksums) = UpdateService.FindFiles(release.RootElement);
-        Assert.Equal("Filee-9.9.9-win-Setup.exe", installer?.Name);
-        Assert.Equal("Filee-9.9.9-SHA256SUMS.txt", checksums?.Name);
+
+        Assert.Equal(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", 1234), installer);
+        Assert.Equal("Filee-9.9.9-linux-x64-SHA256SUMS.txt", checksums?.Name);
     }
 
     [Fact]
@@ -115,7 +94,7 @@ public class UpdateServiceTests
     {
         using var empty = JsonDocument.Parse("""{"tag_name": "v9.9.9"}""");
         using var http = JsonDocument.Parse("""
-            {"assets": [{"name": "Filee-9.9.9-win-Setup.exe", "size": 1, "browser_download_url": "http://example.test/a.exe"}]}
+            {"assets": [{"name": "Filee-9.9.9-linux-x64.tar.gz", "size": 1, "browser_download_url": "http://example.test/a.exe"}]}
             """);
 
         Assert.Equal((null, null), UpdateService.FindFiles(empty.RootElement));
@@ -126,12 +105,12 @@ public class UpdateServiceTests
     public void Checksum_lines_are_matched_by_file_name()
     {
         var hash = new string('A', 64);
-        var sums = $"{new string('1', 64)}  Filee-9.9.9-win-Portable.zip\r\n{hash}  Filee-9.9.9-win-Setup.exe\r\n";
+        var sums = $"{new string('1', 64)}  Filee-9.9.9-linux-arm64.tar.gz\r\n{hash}  Filee-9.9.9-linux-x64.tar.gz\r\n";
 
-        Assert.Equal(hash.ToLowerInvariant(), UpdateService.ParseChecksum(sums, "Filee-9.9.9-win-Setup.exe"));
-        Assert.Equal(hash.ToLowerInvariant(), UpdateService.ParseChecksum($"{hash} *Filee-9.9.9-win-Setup.exe", "Filee-9.9.9-win-Setup.exe"));
-        Assert.Null(UpdateService.ParseChecksum(sums, "Filee-9.9.8-win-Setup.exe"));
-        Assert.Null(UpdateService.ParseChecksum("tooshort  Filee-9.9.9-win-Setup.exe", "Filee-9.9.9-win-Setup.exe"));
+        Assert.Equal(hash.ToLowerInvariant(), UpdateService.ParseChecksum(sums, "Filee-9.9.9-linux-x64.tar.gz"));
+        Assert.Equal(hash.ToLowerInvariant(), UpdateService.ParseChecksum($"{hash} *Filee-9.9.9-linux-x64.tar.gz", "Filee-9.9.9-linux-x64.tar.gz"));
+        Assert.Null(UpdateService.ParseChecksum(sums, "Filee-9.9.8-linux-x64.tar.gz"));
+        Assert.Null(UpdateService.ParseChecksum("tooshort  Filee-9.9.9-linux-x64.tar.gz", "Filee-9.9.9-linux-x64.tar.gz"));
     }
 
     [Fact]
@@ -141,12 +120,12 @@ public class UpdateServiceTests
         var network = new FakeRelease(installer, Sha256(installer));
         var updates = Updates(network, installer.Length);
         var folder = TempFolder();
-        File.WriteAllText(Path.Combine(folder, "Filee-9.9.8-win-Setup.exe"), "an older download");
+        File.WriteAllText(Path.Combine(folder, "Filee-9.9.8-linux-x64.tar.gz"), "an older download");
         var progress = new List<int>();
 
         var path = await updates.DownloadInstallerAsync(folder, new SyncProgress(progress.Add), TestContext.Current.CancellationToken);
 
-        Assert.Equal(Path.Combine(folder, "Filee-9.9.9-win-Setup.exe"), path);
+        Assert.Equal(Path.Combine(folder, "Filee-9.9.9-linux-x64.tar.gz"), path);
         Assert.Equal(installer, File.ReadAllBytes(path));
         Assert.Equal([path], Directory.GetFiles(folder)); // the older download and the .part file are gone
         Assert.Equal(100, progress[^1]);
@@ -184,7 +163,7 @@ public class UpdateServiceTests
     public async Task Checksum_file_without_the_installer_fails()
     {
         var installer = RandomNumberGenerator.GetBytes(1_000);
-        var updates = Updates(new FakeRelease(installer, Sha256(installer), sumsName: "Filee-9.9.8-win-Setup.exe"), installer.Length);
+        var updates = Updates(new FakeRelease(installer, Sha256(installer), sumsName: "Filee-9.9.8-linux-x64.tar.gz"), installer.Length);
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             updates.DownloadInstallerAsync(TempFolder(), null, TestContext.Current.CancellationToken));
@@ -200,122 +179,11 @@ public class UpdateServiceTests
             updates.DownloadInstallerAsync(TempFolder(), null, TestContext.Current.CancellationToken));
     }
 
-    private const string Publisher = "CN=Open Source Developer, Filee";
-
-    /// <summary>An update service whose own program is signed by <paramref name="own"/> and the installer by <paramref name="installer"/>.</summary>
-    private static UpdateService Signed(string? own, string? installer) =>
-        new(NullLogger<UpdateService>.Instance, new FakeNetwork("no network"))
-        {
-            OwnProgram = "Filee.exe",
-            SignerOf = (path, _) => path == "Filee.exe" ? own : installer,
-        };
-
-    [Fact]
-    public void Installer_signed_by_the_same_publisher_is_kept()
-    {
-        var path = Path.Combine(TempFolder(), "Filee-9.9.9-win-Setup.exe");
-        File.WriteAllText(path, "setup");
-
-        Signed(Publisher, Publisher).CheckPublisher(path);
-
-        Assert.True(File.Exists(path));
-    }
-
-    [Theory]
-    [InlineData("CN=Someone Else")]
-    [InlineData(null)] // not signed, or signed with a certificate Windows does not trust
-    public void Installer_signed_by_anyone_else_is_thrown_away(string? signer)
-    {
-        var path = Path.Combine(TempFolder(), "Filee-9.9.9-win-Setup.exe");
-        File.WriteAllText(path, "setup");
-
-        Assert.Throws<InvalidDataException>(() => Signed(Publisher, signer).CheckPublisher(path));
-        Assert.False(File.Exists(path));
-    }
-
-    [Fact]
-    public void Failed_revocation_check_is_named_in_the_error()
-    {
-        // Offline or behind a proxy, the signature is fine but the certificate authority can't be asked: the
-        // installer is still thrown away, and the log says why instead of blaming the publisher.
-        var path = Path.Combine(TempFolder(), "Filee-9.9.9-win-Setup.exe");
-        File.WriteAllText(path, "setup");
-        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new FakeNetwork("no network"))
-        {
-            OwnProgram = "Filee.exe",
-            SignerOf = (file, revocation) => file == "Filee.exe" || !revocation ? Publisher : null,
-        };
-
-        var error = Assert.Throws<InvalidDataException>(() => updates.CheckPublisher(path));
-
-        Assert.Contains("revocation check failed", error.Message);
-        Assert.False(File.Exists(path));
-    }
-
-    [Fact]
-    public void Installer_is_checked_for_revocation_but_this_copy_is_not()
-    {
-        var checks = new List<(string Path, bool Revocation)>();
-        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new FakeNetwork("no network"))
-        {
-            OwnProgram = "Filee.exe",
-            SignerOf = (path, revocation) =>
-            {
-                checks.Add((path, revocation));
-                return Publisher;
-            },
-        };
-
-        updates.CheckPublisher("Setup.exe");
-
-        Assert.Equal([("Filee.exe", false), ("Setup.exe", true)], checks);
-    }
-
-    [Fact]
-    public void Unsigned_copy_keeps_to_the_checksum()
-    {
-        // Built from source: there is no publisher to compare with, so the installer is not refused for its signature.
-        var path = Path.Combine(TempFolder(), "Filee-9.9.9-win-Setup.exe");
-        File.WriteAllText(path, "setup");
-
-        Signed(null, null).CheckPublisher(path);
-
-        Assert.True(File.Exists(path));
-    }
-
-    [Fact]
-    public void Unsigned_file_has_no_trusted_signer()
-    {
-        var path = Path.Combine(TempFolder(), "unsigned.exe");
-        File.WriteAllBytes(path, RandomNumberGenerator.GetBytes(4_096));
-
-        Assert.Null(Authenticode.TrustedSigner(path, checkRevocation: false));
-    }
-
-    [Fact]
-    public void Signed_program_has_its_publisher_as_signer()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "Authenticode is Windows only");
-        // dotnet.exe carries Microsoft's embedded signature; it sits three folders above the shared runtime
-        // (dotnet\shared\Microsoft.NETCore.App\<version>).
-        var dotnet = Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", "dotnet.exe"));
-        Assert.SkipUnless(File.Exists(dotnet), $"no {dotnet}");
-
-        Assert.Contains("Microsoft", Authenticode.TrustedSigner(dotnet, checkRevocation: false));
-    }
-
-    [Fact]
-    public void Installer_runs_without_the_wizard_and_without_restarting_windows()
-    {
-        Assert.Contains("/SILENT", UpdateService.InstallerArguments);
-        Assert.Contains("/NORESTART", UpdateService.InstallerArguments);
-    }
-
     private static UpdateService Updates(FakeRelease network, long installerSize)
     {
         var updates = new UpdateService(NullLogger<UpdateService>.Instance, network);
-        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-win-Setup.exe", Base + "Filee-9.9.9-win-Setup.exe", installerSize),
-            new UpdateService.ReleaseFile("Filee-9.9.9-SHA256SUMS.txt", Base + "Filee-9.9.9-SHA256SUMS.txt", 100));
+        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", installerSize),
+            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64-SHA256SUMS.txt", Base + "Filee-9.9.9-linux-x64-SHA256SUMS.txt", 100));
         return updates;
     }
 
@@ -335,7 +203,7 @@ public class UpdateServiceTests
     }
 
     /// <summary>Serves a release's checksum file and installer.</summary>
-    private sealed class FakeRelease(byte[] installer, string hash, string sumsName = "Filee-9.9.9-win-Setup.exe",
+    private sealed class FakeRelease(byte[] installer, string hash, string sumsName = "Filee-9.9.9-linux-x64.tar.gz",
         HttpStatusCode installerStatus = HttpStatusCode.OK) : HttpMessageHandler
     {
         public int InstallerRequests { get; private set; }
@@ -346,9 +214,9 @@ public class UpdateServiceTests
             if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent($"{new string('1', 64)}  Filee-9.9.9-win-Portable.zip\n{hash}  {sumsName}\n", Encoding.ASCII),
+                    Content = new StringContent($"{new string('1', 64)}  Filee-9.9.9-linux-arm64.tar.gz\n{hash}  {sumsName}\n", Encoding.ASCII),
                 });
-            if (url.EndsWith("-win-Setup.exe", StringComparison.Ordinal))
+            if (url.EndsWith("-linux-x64.tar.gz", StringComparison.Ordinal))
             {
                 InstallerRequests++;
                 Assert.Contains("application/octet-stream", request.Headers.Accept.ToString());
@@ -377,15 +245,15 @@ public class UpdateServiceTests
     public async Task Update_installs_the_release_that_is_latest_now_not_the_one_found_earlier()
     {
         // An earlier check found 9.9.9; 9.9.10 came out before Update was pressed.
-        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new LatestRelease("v9.9.10")) { TargetPlatform = "win" };
-        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-win-Setup.exe", Base + "Filee-9.9.9-win-Setup.exe", 1),
-            new UpdateService.ReleaseFile("Filee-9.9.9-SHA256SUMS.txt", Base + "Filee-9.9.9-SHA256SUMS.txt", 1));
+        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new LatestRelease("v9.9.10")) { TargetPlatform = "linux-x64" };
+        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", 1),
+            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64-SHA256SUMS.txt", Base + "Filee-9.9.9-linux-x64-SHA256SUMS.txt", 1));
         var announced = 0;
         updates.UpdateFound += (_, _) => announced++;
 
         Assert.True(await updates.RefreshAsync(announce: false));
 
-        Assert.Equal("Filee-9.9.10-win-Setup.exe", updates.Installer!.Name);
+        Assert.Equal("Filee-9.9.10-linux-x64.tar.gz", updates.Installer!.Name);
         Assert.Equal("9.9.10", updates.LatestVersion);
         Assert.Equal(0, announced); // no second notice while updating
     }
@@ -398,8 +266,8 @@ public class UpdateServiceTests
             var version = tag.TrimStart('v');
             var json = $$"""
                 {"tag_name":"{{tag}}","assets":[
-                  {"name":"Filee-{{version}}-win-Setup.exe","browser_download_url":"{{Base}}Filee-{{version}}-win-Setup.exe","size":1234},
-                  {"name":"Filee-{{version}}-SHA256SUMS.txt","browser_download_url":"{{Base}}Filee-{{version}}-SHA256SUMS.txt","size":100}]}
+                  {"name":"Filee-{{version}}-linux-x64.tar.gz","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64.tar.gz","size":1234},
+                  {"name":"Filee-{{version}}-linux-x64-SHA256SUMS.txt","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64-SHA256SUMS.txt","size":100}]}
                 """;
             return Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/releases/latest", StringComparison.Ordinal)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") }
@@ -433,12 +301,124 @@ public class UpdateServiceTests
         var folder = TempFolder();
         Assert.False(UpdateService.IsLinuxInstalled(folder));
 
-        var marker = Path.Combine(folder, ".filee-package");
-        File.WriteAllText(marker, "com.filee.app\n");
+        var marker = Path.Combine(folder, ".wayfilee-package");
+        File.WriteAllText(marker, "com.wayfilee.app\n");
         Assert.True(UpdateService.IsLinuxInstalled(folder));
 
         File.WriteAllText(marker, "org.other.app");
         Assert.False(UpdateService.IsLinuxInstalled(folder));
+    }
+
+    [Theory]
+    [InlineData(true, null, LinuxUpdateChannel.UserInstall)]
+    [InlineData(false, "deb", LinuxUpdateChannel.SystemPackage)]
+    [InlineData(false, "rpm", LinuxUpdateChannel.SystemPackage)]
+    [InlineData(false, "arch", LinuxUpdateChannel.SystemPackage)]
+    [InlineData(true, "rpm", LinuxUpdateChannel.SystemPackage)]
+    [InlineData(false, null, LinuxUpdateChannel.Portable)]
+    [InlineData(false, "unknown", LinuxUpdateChannel.Portable)]
+    public void Update_channel_follows_install_ownership(bool userInstall, string? packageKind, LinuxUpdateChannel expected) =>
+        Assert.Equal(expected, UpdateService.GetInstallChannel(userInstall, packageKind));
+
+    [Fact]
+    public void Package_update_uses_package_manager_only_after_the_app_exits()
+    {
+        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new FakeNetwork("no network"))
+        {
+            UsesSystemPackageManager = true,
+            PackageKindForUpdate = "rpm",
+        };
+        ProcessStartInfo? launch = null;
+        var shutdown = false;
+        updates.StartProcess = psi => { launch = psi; return null; };
+        updates.RequestApplicationShutdown = () => shutdown = true;
+
+        var workspace = TempFolder();
+        var packagePath = Path.Combine(workspace, "WayFilee-9.9.9-linux-x64.rpm");
+        updates.StartLinuxPackageUpdate(packagePath, workspace);
+
+        Assert.Equal("/bin/sh", launch?.FileName);
+        Assert.Contains("pkexec dnf install -y", launch!.ArgumentList[1]);
+        Assert.Contains("kill -0 \"$1\"", launch.ArgumentList[1]);
+        Assert.Equal(packagePath, launch.ArgumentList[5]);
+        Assert.True(shutdown);
+        Assert.Equal(UpdateStep.Installing, updates.Step);
+    }
+
+    [Theory]
+    [InlineData("rpm", "WayFilee-9.9.9-linux-x64.rpm")]
+    [InlineData("deb", "WayFilee-9.9.9-linux-x64.deb")]
+    [InlineData("arch", "WayFilee-9.9.9-linux-x64.pkg.tar.zst")]
+    public void Package_release_assets_are_selected_by_format(string kind, string fileName)
+    {
+        using var release = JsonDocument.Parse($$"""
+            {"assets": [
+              {"name": "{{fileName}}", "size": 100, "browser_download_url": "{{Base}}{{fileName}}"},
+              {"name": "WayFilee-9.9.9-linux-x64-{{kind}}-SHA256SUMS.txt", "size": 90, "browser_download_url": "{{Base}}WayFilee-9.9.9-linux-x64-{{kind}}-SHA256SUMS.txt"}
+            ]}
+            """);
+        var (installer, checksums) = UpdateService.FindFiles(release.RootElement, "linux-x64", kind);
+        Assert.Equal(fileName, installer?.Name);
+        Assert.EndsWith($"-{kind}-SHA256SUMS.txt", checksums?.Name);
+    }
+
+    [AvaloniaFact]
+    public async Task Package_update_downloads_and_verifies_the_release_before_requesting_shutdown()
+    {
+        var package = RandomNumberGenerator.GetBytes(4096);
+        var network = new FakePackageRelease(package, Sha256(package));
+        var updates = new UpdateService(NullLogger<UpdateService>.Instance, network)
+        {
+            UsesSystemPackageManager = true,
+            PackageKindForUpdate = "rpm",
+            TargetPlatform = "linux-x64",
+        };
+        ProcessStartInfo? launch = null;
+        var shutdown = false;
+        updates.StartProcess = psi => { launch = psi; return null; };
+        updates.RequestApplicationShutdown = () => shutdown = true;
+
+        await updates.UpdateAsync();
+
+        Assert.True(shutdown);
+        Assert.Equal(UpdateStep.Installing, updates.Step);
+        Assert.Equal("dnf", launch!.ArgumentList[4]);
+        var path = launch.ArgumentList[5];
+        Assert.EndsWith(".rpm", path);
+        Assert.Equal(package, File.ReadAllBytes(path));
+        Assert.Equal(1, network.PackageRequests);
+        UpdateService.DeleteSecureWorkspace(launch.ArgumentList[7]);
+    }
+
+    private sealed class FakePackageRelease(byte[] package, string hash) : HttpMessageHandler
+    {
+        public int PackageRequests { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/releases/latest", StringComparison.Ordinal))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent($$"""
+                        {"tag_name":"v9.9.9","assets":[
+                          {"name":"WayFilee-9.9.9-linux-x64.rpm","size":{{package.Length}},"browser_download_url":"{{Base}}WayFilee-9.9.9-linux-x64.rpm"},
+                          {"name":"WayFilee-9.9.9-linux-x64-rpm-SHA256SUMS.txt","size":100,"browser_download_url":"{{Base}}WayFilee-9.9.9-linux-x64-rpm-SHA256SUMS.txt"}
+                        ]}
+                        """, Encoding.UTF8, "application/json"),
+                });
+            if (path.EndsWith("rpm-SHA256SUMS.txt", StringComparison.Ordinal))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent($"{hash}  WayFilee-9.9.9-linux-x64.rpm\n"),
+                });
+            if (path.EndsWith("WayFilee-9.9.9-linux-x64.rpm", StringComparison.Ordinal))
+            {
+                PackageRequests++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(package) });
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
     }
 
     [Fact]
@@ -447,7 +427,6 @@ public class UpdateServiceTests
         using var release = JsonDocument.Parse($$"""
             {"tag_name": "v1.2.3", "assets": [
               {"name": "Filee-1.2.3-SHA256SUMS.txt", "size": 100, "browser_download_url": "{{Base}}Filee-1.2.3-SHA256SUMS.txt"},
-              {"name": "Filee-1.2.3-win-Setup.exe", "size": 1200, "browser_download_url": "{{Base}}Filee-1.2.3-win-Setup.exe"},
               {"name": "Filee-1.2.3-linux-x64.tar.gz", "size": 2000, "browser_download_url": "{{Base}}Filee-1.2.3-linux-x64.tar.gz"},
               {"name": "Filee-1.2.3-linux-x64-SHA256SUMS.txt", "size": 90, "browser_download_url": "{{Base}}Filee-1.2.3-linux-x64-SHA256SUMS.txt"},
               {"name": "Filee-1.2.3-linux-arm64.tar.gz", "size": 1900, "browser_download_url": "{{Base}}Filee-1.2.3-linux-arm64.tar.gz"},
@@ -463,9 +442,6 @@ public class UpdateServiceTests
         Assert.Equal("Filee-1.2.3-linux-arm64.tar.gz", installerArm64?.Name);
         Assert.Equal("Filee-1.2.3-linux-arm64-SHA256SUMS.txt", sumsArm64?.Name);
 
-        var (installerWin, sumsWin) = UpdateService.FindFiles(release.RootElement, "win");
-        Assert.Equal("Filee-1.2.3-win-Setup.exe", installerWin?.Name);
-        Assert.Equal("Filee-1.2.3-SHA256SUMS.txt", sumsWin?.Name);
     }
 
     [Fact]

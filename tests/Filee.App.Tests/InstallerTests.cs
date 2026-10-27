@@ -38,28 +38,6 @@ public class InstallerTests
         Assert.False(CommandLine.Parse(["--background"]).Quit);
     }
 
-    [Fact]
-    public void Installed_copies_are_recognised_by_their_uninstaller()
-    {
-        var folder = Path.Combine(Path.GetTempPath(), "filee-installed-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(folder);
-        try
-        {
-            Assert.False(UpdateService.IsInstalledIn(folder));
-            // Filee's own Setup (2.0 and later).
-            File.WriteAllText(Path.Combine(folder, "uninstall.exe"), "");
-            Assert.True(UpdateService.IsInstalledIn(folder));
-            // Inno Setup (1.x), until Setup takes the installation over.
-            File.Delete(Path.Combine(folder, "uninstall.exe"));
-            File.WriteAllText(Path.Combine(folder, "unins000.exe"), "");
-            Assert.True(UpdateService.IsInstalledIn(folder));
-        }
-        finally
-        {
-            Directory.Delete(folder, recursive: true);
-        }
-    }
-
     [AvaloniaFact]
     public void Engines_from_the_installer_start_only_when_something_is_left_to_install()
     {

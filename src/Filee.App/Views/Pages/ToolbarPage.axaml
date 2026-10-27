@@ -366,6 +366,15 @@
                 <TextBlock Classes="label" VerticalAlignment="Center" Text="{DynamicResource toolbar.opacity}" />
                 <Slider Grid.Column="1" Minimum="10" Maximum="100" Value="{Binding SliceOpacity}" AutomationProperties.Name="{DynamicResource toolbar.opacity}" />
               </Grid>
+              <Grid ColumnDefinitions="90,*">
+                <TextBlock Classes="label" VerticalAlignment="Center" Text="{DynamicResource toolbar.animation_speed}" TextWrapping="Wrap" />
+                <ComboBox Grid.Column="1" SelectedIndex="{Binding AnimationSpeedIndex}" AutomationProperties.Name="{DynamicResource toolbar.animation_speed}">
+                  <ComboBoxItem Content="{DynamicResource toolbar.animation_speed.instant}" />
+                  <ComboBoxItem Content="{DynamicResource toolbar.animation_speed.fast}" />
+                  <ComboBoxItem Content="{DynamicResource toolbar.animation_speed.normal}" />
+                  <ComboBoxItem Content="{DynamicResource toolbar.animation_speed.slow}" />
+                </ComboBox>
+              </Grid>
             </StackPanel>
           </Border>
         </StackPanel>

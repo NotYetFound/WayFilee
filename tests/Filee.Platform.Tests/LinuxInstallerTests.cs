@@ -57,7 +57,7 @@ if [ ""${SHIM_FAIL_POST_VALIDATION:-0}"" = ""1"" ]; then
         *.staging-*)
             ""$REAL_MV"" ""$@""
             res=$?
-            rm -f ""$2/.filee-package""
+            rm -f ""$2/.wayfilee-package""
             exit ""$res""
             ;;
     esac
@@ -71,7 +71,7 @@ if [ ""${SHIM_FAIL_CLEANUP_FAILED_DIR:-0}"" = ""1"" ]; then
             mkdir -p ""$2/locked-folder""
             touch ""$2/locked-folder/file""
             chmod 555 ""$2/locked-folder""
-            rm -f ""$2/.filee-package""
+            rm -f ""$2/.wayfilee-package""
             exit ""$res""
             ;;
     esac
@@ -82,7 +82,7 @@ if [ ""${SHIM_FAIL_QUARANTINE:-0}"" = ""1"" ]; then
         *.staging-*)
             ""$REAL_MV"" ""$@""
             res=$?
-            rm -f ""$2/.filee-package""
+            rm -f ""$2/.wayfilee-package""
             exit ""$res""
             ;;
     esac
@@ -150,25 +150,28 @@ exec ""$REAL_MV"" ""$@""
         var (exitCode, output, error) = RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
         Assert.True(exitCode == 0, $"Install failed with code {exitCode}. Output: {output}. Error: {error}");
-        Assert.Contains("Installed Filee at", output);
+        Assert.Contains("Installed WayFilee at", output);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         Assert.True(File.Exists(Path.Combine(installDir, "Filee")));
         Assert.True(File.Exists(Path.Combine(installDir, "filee-cli")));
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
 
-        var markerPath = Path.Combine(installDir, ".filee-package");
+        var markerPath = Path.Combine(installDir, ".wayfilee-package");
         Assert.True(File.Exists(markerPath));
-        Assert.Equal("com.filee.app", File.ReadAllText(markerPath).Trim());
-        Assert.False(File.Exists(Path.Combine(installDir, ".filee-upgrade-token")));
+        Assert.Equal("com.wayfilee.app", File.ReadAllText(markerPath).Trim());
+        Assert.False(File.Exists(Path.Combine(installDir, ".wayfilee-upgrade-token")));
 
-        var launcherPath = Path.Combine(env.HomeDir, ".local", "bin", "filee");
+        var launcherPath = Path.Combine(env.HomeDir, ".local", "bin", "wayfilee");
         Assert.True(File.Exists(launcherPath));
         Assert.Equal(Path.Combine(installDir, "filee-cli"), File.ResolveLinkTarget(launcherPath, true)?.FullName);
 
-        var desktopPath = Path.Combine(env.DataDir, "applications", "com.filee.app.desktop");
+        var desktopPath = Path.Combine(env.DataDir, "applications", "com.wayfilee.app.desktop");
         Assert.True(File.Exists(desktopPath));
-        Assert.Contains("X-Filee-Managed=true", File.ReadAllText(desktopPath));
+        var desktopEntry = File.ReadAllText(desktopPath);
+        Assert.Contains("X-WayFilee-Managed=true", desktopEntry);
+        Assert.Contains($"Icon={Path.Combine(installDir, "filee.svg")}", desktopEntry);
+        Assert.True(File.Exists(Path.Combine(installDir, "filee.svg")));
     }
 
     [Fact]
@@ -199,7 +202,7 @@ exec ""$REAL_MV"" ""$@""
         var (exitCode1, _, _) = RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
         Assert.Equal(0, exitCode1);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
 
         // Simulate user downloaded engines in ~/.local/share/Filee/engines
         var engineDir = Path.Combine(env.DataDir, "Filee", "engines", "ffmpeg");
@@ -220,7 +223,7 @@ exec ""$REAL_MV"" ""$@""
         // Run upgrade
         var (exitCode2, output2, error2) = RunInstaller(v2Source, env.DataDir, env.HomeDir, "--upgrade");
         Assert.True(exitCode2 == 0, $"Upgrade failed with code {exitCode2}. Output: {output2}. Error: {error2}");
-        Assert.Contains("Upgraded Filee at", output2);
+        Assert.Contains("Upgraded WayFilee at", output2);
 
         // Verify application was updated to v2.0.0
         Assert.Equal("v2.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
@@ -234,10 +237,10 @@ exec ""$REAL_MV"" ""$@""
         Assert.Equal("{\"custom\": true}", File.ReadAllText(mockSettings));
 
         // Verify launcher symlink, package marker, and token cleanup
-        var launcherPath = Path.Combine(env.HomeDir, ".local", "bin", "filee");
+        var launcherPath = Path.Combine(env.HomeDir, ".local", "bin", "wayfilee");
         Assert.Equal(Path.Combine(installDir, "filee-cli"), File.ResolveLinkTarget(launcherPath, true)?.FullName);
-        Assert.Equal("com.filee.app", File.ReadAllText(Path.Combine(installDir, ".filee-package")).Trim());
-        Assert.False(File.Exists(Path.Combine(installDir, ".filee-upgrade-token")));
+        Assert.Equal("com.wayfilee.app", File.ReadAllText(Path.Combine(installDir, ".wayfilee-package")).Trim());
+        Assert.False(File.Exists(Path.Combine(installDir, ".wayfilee-upgrade-token")));
     }
 
     [Fact]
@@ -263,8 +266,8 @@ exec ""$REAL_MV"" ""$@""
         CreateMockPayload(env.SourceDir, "v1.0.0");
         RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
-        var markerPath = Path.Combine(installDir, ".filee-package");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
+        var markerPath = Path.Combine(installDir, ".wayfilee-package");
         File.WriteAllText(markerPath, "alien.app");
 
         var v2Source = Path.Combine(_root, "source-v2");
@@ -272,7 +275,7 @@ exec ""$REAL_MV"" ""$@""
 
         var (exitCode, output, error) = RunInstaller(v2Source, env.DataDir, env.HomeDir, "--upgrade");
         Assert.NotEqual(0, exitCode);
-        Assert.Contains("not installed by Filee", output + error);
+        Assert.Contains("not installed by WayFilee", output + error);
 
         // Original installation must be untouched
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
@@ -287,7 +290,7 @@ exec ""$REAL_MV"" ""$@""
         CreateMockPayload(env.SourceDir, "v1.0.0");
         RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
 
         // Broken v2 source: missing filee-cli
         var v2Source = Path.Combine(_root, "source-v2");
@@ -311,7 +314,7 @@ exec ""$REAL_MV"" ""$@""
         CreateMockPayload(env.SourceDir, "v1.0.0");
         RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         var quitLog = Path.Combine(env.DataDir, "quit.log");
 
         // Replace Filee with a mock script that records --quit
@@ -337,7 +340,7 @@ exec ""$REAL_MV"" ""$@""
         CreateMockPayload(env.SourceDir, "v1.0.0");
         RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
 
         var v2Source = Path.Combine(_root, "source-v2");
         CreateMockPayload(v2Source, "v2.0.0");
@@ -347,12 +350,12 @@ exec ""$REAL_MV"" ""$@""
             new Dictionary<string, string> { ["SHIM_FAIL_ACTIVATION"] = "1" }, "--upgrade");
 
         Assert.NotEqual(0, exitCode);
-        Assert.Contains("Restored the previous Filee installation", output + error);
+        Assert.Contains("Restored the previous WayFilee installation", output + error);
 
         // Original installation must be safely restored
         Assert.True(File.Exists(Path.Combine(installDir, "Filee")));
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
-        Assert.Equal("com.filee.app", File.ReadAllText(Path.Combine(installDir, ".filee-package")).Trim());
+        Assert.Equal("com.wayfilee.app", File.ReadAllText(Path.Combine(installDir, ".wayfilee-package")).Trim());
     }
 
     [Fact]
@@ -364,7 +367,7 @@ exec ""$REAL_MV"" ""$@""
         CreateMockPayload(env.SourceDir, "v1.0.0");
         RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
 
         var v2Source = Path.Combine(_root, "source-v2");
         CreateMockPayload(v2Source, "v2.0.0");
@@ -375,12 +378,12 @@ exec ""$REAL_MV"" ""$@""
 
         Assert.NotEqual(0, exitCode);
         Assert.Contains("Activated installation failed post-swap validation", output + error);
-        Assert.Contains("Restored the previous Filee installation", output + error);
+        Assert.Contains("Restored the previous WayFilee installation", output + error);
 
         // Original installation must be safely restored
         Assert.True(File.Exists(Path.Combine(installDir, "Filee")));
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
-        Assert.Equal("com.filee.app", File.ReadAllText(Path.Combine(installDir, ".filee-package")).Trim());
+        Assert.Equal("com.wayfilee.app", File.ReadAllText(Path.Combine(installDir, ".wayfilee-package")).Trim());
     }
 
     [Fact]
@@ -406,7 +409,7 @@ exec ""$REAL_MV"" ""$@""
         Assert.Contains("inspect and remove or rename", output + error);
 
         // Verify that the backup directory still exists and holds the original installation
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var backupDirs = Directory.GetDirectories(fileeDir, ".backup-*");
         Assert.NotEmpty(backupDirs);
         var backupDir = backupDirs[0];
@@ -414,7 +417,7 @@ exec ""$REAL_MV"" ""$@""
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(backupDir, "version.txt")).Trim());
 
         // Verify that the occupied conflict file was preserved and not overwritten
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         Assert.True(File.Exists(Path.Combine(installDir, "conflict")));
     }
 
@@ -441,7 +444,7 @@ exec ""$REAL_MV"" ""$@""
         Assert.Contains("inspect and remove or rename", output + error);
 
         // Verify that the backup directory still exists and holds the original installation
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var backupDirs = Directory.GetDirectories(fileeDir, ".backup-*");
         Assert.NotEmpty(backupDirs);
         var backupDir = backupDirs[0];
@@ -449,7 +452,7 @@ exec ""$REAL_MV"" ""$@""
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(backupDir, "version.txt")).Trim());
 
         // Verify that the unmanaged conflict was not touched
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         Assert.True(File.Exists(Path.Combine(installDir, "conflict")));
     }
 
@@ -476,7 +479,7 @@ exec ""$REAL_MV"" ""$@""
         Assert.DoesNotContain("A partial or invalid directory exists at:", output + error);
 
         // Verify that the backup directory still exists and holds the original installation
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var backupDirs = Directory.GetDirectories(fileeDir, ".backup-*");
         Assert.NotEmpty(backupDirs);
         var backupDir = backupDirs[0];
@@ -511,11 +514,11 @@ exec ""$REAL_MV"" ""$@""
         Assert.Contains("inspect and remove or rename", output + error);
 
         // Verify that the destination was NOT deleted or removed via fallback
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         Assert.True(File.Exists(Path.Combine(installDir, "Filee")));
 
         // Verify that the backup directory still exists and holds the original installation
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var backupDirs = Directory.GetDirectories(fileeDir, ".backup-*");
         Assert.NotEmpty(backupDirs);
         var backupDir = backupDirs[0];
@@ -540,16 +543,16 @@ exec ""$REAL_MV"" ""$@""
             new Dictionary<string, string> { ["SHIM_FAIL_CLEANUP_FAILED_DIR"] = "1" }, "--upgrade");
 
         Assert.NotEqual(0, exitCode);
-        Assert.Contains("Update failed. Restored the previous Filee installation", output + error);
+        Assert.Contains("Update failed. Restored the previous WayFilee installation", output + error);
         Assert.Contains("Quarantined failed update files preserved at:", output + error);
 
         // Verify that the old installation was successfully restored to application directory
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         Assert.True(File.Exists(Path.Combine(installDir, "Filee")));
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
 
         // Verify that the quarantined failed directory still exists on disk and was preserved
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var failedDirs = Directory.GetDirectories(fileeDir, ".failed-*");
         Assert.NotEmpty(failedDirs);
         var failedDir = failedDirs[0];
@@ -570,7 +573,7 @@ exec ""$REAL_MV"" ""$@""
         RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
 
         // Create a pre-existing backup and failed directory from earlier interrupted runs
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var oldBackupDir = Path.Combine(fileeDir, ".backup-earlier-crash-999");
         Directory.CreateDirectory(oldBackupDir);
         var oldVersionFile = Path.Combine(oldBackupDir, "version.txt");
@@ -624,13 +627,13 @@ exec ""$REAL_MV"" ""$@""
         Assert.Contains("inspect and remove or rename", output + error);
 
         // Verify that the foreign directory and its contents were NOT deleted
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         var foreignFile = Path.Combine(installDir, "important.txt");
         Assert.True(File.Exists(foreignFile));
         Assert.Equal("important-foreign-data", File.ReadAllText(foreignFile).Trim());
 
         // Verify that the backup directory still exists and holds the original installation
-        var fileeDir = Path.Combine(env.DataDir, "filee");
+        var fileeDir = Path.Combine(env.DataDir, "wayfilee");
         var backupDirs = Directory.GetDirectories(fileeDir, ".backup-*");
         Assert.NotEmpty(backupDirs);
         var backupDir = backupDirs[0];
@@ -655,9 +658,9 @@ exec ""$REAL_MV"" ""$@""
             new Dictionary<string, string> { ["_FILEE_TEST_FAIL_ACTIVATION"] = "1", ["_FILEE_TEST_HARNESS"] = "com.filee.test.harness" }, "--upgrade");
 
         Assert.True(exitCode == 0, $"Upgrade failed unexpectedly. Output: {output}. Error: {error}");
-        Assert.Contains("Upgraded Filee at", output);
+        Assert.Contains("Upgraded WayFilee at", output);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         Assert.Equal("v2.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
     }
 
@@ -679,9 +682,9 @@ exec ""$REAL_MV"" ""$@""
         // Fresh install with spaces
         var (exitCode1, output1, error1) = RunInstaller(sourceDir, dataDir, homeDir);
         Assert.True(exitCode1 == 0, $"Fresh install failed. Output: {output1}. Error: {error1}");
-        Assert.Contains("Installed Filee at", output1);
+        Assert.Contains("Installed WayFilee at", output1);
 
-        var installDir = Path.Combine(dataDir, "filee", "application");
+        var installDir = Path.Combine(dataDir, "wayfilee", "application");
         Assert.True(File.Exists(Path.Combine(installDir, "Filee")));
         Assert.Equal("v1.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
 
@@ -691,7 +694,7 @@ exec ""$REAL_MV"" ""$@""
 
         var (exitCode2, output2, error2) = RunInstaller(v2Source, dataDir, homeDir, "--upgrade");
         Assert.True(exitCode2 == 0, $"Upgrade failed. Output: {output2}. Error: {error2}");
-        Assert.Contains("Upgraded Filee at", output2);
+        Assert.Contains("Upgraded WayFilee at", output2);
         Assert.Equal("v2.0.0", File.ReadAllText(Path.Combine(installDir, "version.txt")).Trim());
     }
 
@@ -706,7 +709,7 @@ exec ""$REAL_MV"" ""$@""
         var (exitCode1, _, _) = RunInstaller(env.SourceDir, env.DataDir, env.HomeDir);
         Assert.Equal(0, exitCode1);
 
-        var installDir = Path.Combine(env.DataDir, "filee", "application");
+        var installDir = Path.Combine(env.DataDir, "wayfilee", "application");
         var activeFilee = Path.Combine(installDir, "Filee");
 
         // Make the installed Filee binary fail if --quit is invoked
@@ -742,12 +745,14 @@ exec ""$REAL_MV"" ""$@""
         var filee = Path.Combine(dir, "Filee");
         var cli = Path.Combine(dir, "filee-cli");
         var icon = Path.Combine(dir, "filee.png");
+        var svgIcon = Path.Combine(dir, "filee.svg");
         var ver = Path.Combine(dir, "version.txt");
         var script = Path.Combine(dir, "install.sh");
 
         File.WriteAllText(filee, "#!/bin/sh\nexit 0\n");
         File.WriteAllText(cli, "#!/bin/sh\nexit 0\n");
         File.WriteAllText(icon, "dummy-png");
+        File.WriteAllText(svgIcon, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
         File.WriteAllText(ver, version);
         File.Copy(_installScriptPath, script, overwrite: true);
 

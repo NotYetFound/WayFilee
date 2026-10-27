@@ -19,6 +19,15 @@ public enum ThemeStyle
     MaterialYou,
 }
 
+/// <summary>Speed of the donut appearing and disappearing; other motion is unaffected.</summary>
+public enum DonutAnimationSpeed
+{
+    Instant,
+    Fast,
+    Normal,
+    Slow,
+}
+
 /// <summary>What closing the main window does (Settings → General).</summary>
 public enum CloseAction
 {
@@ -35,7 +44,7 @@ public enum CloseAction
 /// <summary>Look and feel.</summary>
 public sealed class ThemeSettings
 {
-    public ThemeStyle Style { get; set; } = ThemeStyle.Soft;
+    public ThemeStyle Style { get; set; } = ThemeStyle.MaterialYou;
 
     public ThemeMode Mode { get; set; } = ThemeMode.System;
 
@@ -68,6 +77,8 @@ public sealed class DonutSettings
 
     /// <summary>Background opacity of the slices (<see cref="MinOpacity"/> - 1); labels and outlines stay opaque.</summary>
     public double Opacity { get; set; } = 0.96;
+
+    public DonutAnimationSpeed AnimationSpeed { get; set; } = DonutAnimationSpeed.Normal;
 
     /// <summary>The lowest <see cref="Opacity"/> the Theme and Donut toolbar pages offer.</summary>
     public const double MinOpacity = 0.1;
@@ -201,11 +212,6 @@ public sealed class AppSettings
     /// <summary>Set once the first-run welcome has been shown.</summary>
     public bool FirstRunCompleted { get; set; }
 
-    /// <summary>Conversions that succeeded completely, counted until the feedback card has been shown.</summary>
-    public int SuccessfulConversions { get; set; }
-
-    /// <summary>Set once the "Is Filee helping you?" card (GitHub star / feedback) has been shown.</summary>
-    public bool FeedbackPromptShown { get; set; }
 
     /// <summary>macOS: set once Filee has shown the system's Accessibility alert, which it shows only once (#316).</summary>
     public bool AccessibilityPromptShown { get; set; }

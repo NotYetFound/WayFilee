@@ -95,8 +95,7 @@ public sealed class LocalizationService : ILocalizer
 
     /// <summary>Maps "auto" / a culture name to one of the shipped languages.</summary>
     public static string Resolve(string setting) =>
-        // macOS gives an app started from Finder no LANG: its language list comes from the system instead.
-        Resolve(setting, () => Filee.Platform.MacOS.MacOSLocale.PreferredLanguage() ?? UserLanguage);
+        Resolve(setting, () => UserLanguage);
 
     /// <summary>Maps "auto" (the OS language <paramref name="osLanguage"/> gives) / a culture name to a shipped language.</summary>
     internal static string Resolve(string setting, Func<string> osLanguage)

@@ -34,7 +34,7 @@ public class SingleInstanceTests
     public void A_copy_with_its_own_data_folder_never_reaches_the_users_filee()
     {
         // The name without a data folder must stay the same: a new version forwards to an older one that runs.
-        var usual = "Filee-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("someone"u8.ToArray()))[..12];
+        var usual = "WayFilee-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("someone"u8.ToArray()))[..12];
         Assert.Equal(usual, SingleInstance.NameFor("someone", null));
         var test = SingleInstance.NameFor("someone", Path.Combine(Path.GetTempPath(), "filee-a"));
         Assert.NotEqual(usual, test);
@@ -115,14 +115,4 @@ public class SingleInstanceAccessTests
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
     }
 
-    [Fact]
-    public void The_integrity_level_of_this_process_can_be_read()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows tokens.");
-        var state = Filee.Platform.Windows.Elevation.Probe();
-        Assert.True(state.Process >= Filee.Core.Platform.IntegrityLevel.Medium, state.ToString());
-        // Explorer may not run (CI): then its level is unknown and nothing is reported.
-        if (state.Shell == Filee.Core.Platform.IntegrityLevel.Unknown)
-            Assert.False(state.ShellCannotReachFilee);
-    }
 }

@@ -88,6 +88,10 @@
     <!-- Right to left for Arabic (SoftPalette.ApplyFlowDirection). -->
     <Setter Property="FlowDirection" Value="{DynamicResource AppFlowDirection}" />
   </Style>
+  <!-- Avalonia's client-drawn frame is the bright one-pixel outline around the main window. -->
+  <Style Selector="Window.main-window WindowDrawnDecorations">
+    <Setter Property="DefaultFrameThickness" Value="0" />
+  </Style>
   <!-- Pictures, logos and icons look the same in Arabic; only chevrons that point along the line (class "reading")
        turn with it. -->
   <Style Selector="Image, PathIcon">

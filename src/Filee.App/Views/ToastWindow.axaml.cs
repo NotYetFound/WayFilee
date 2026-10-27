@@ -8,7 +8,7 @@ using Filee.App.ViewModels;
 
 namespace Filee.App.Views;
 
-/// <summary>Bottom-right progress stack. Visible exactly while ConversionService.ToastJobs is non-empty.</summary>
+/// <summary>Bottom-right progress stack. Closed when its last job leaves on Wayland.</summary>
 public partial class ToastWindow : Window
 {
     private const int ScreenMargin = 12;
@@ -71,9 +71,14 @@ public partial class ToastWindow : Window
         }
         else if (service.ToastJobs.Count == 0 && IsVisible)
         {
-            Hide();
+            // Hiding an xdg_toplevel can leave a blank KWin window and taskbar entry behind.
+            // WindowService creates a new toast for the next job.
+            Close();
         }
     }
+
+    /// <summary>Shows a replacement window when it is created after a job was already added.</summary>
+    internal void SyncVisibility() => Dispatcher.UIThread.Post(UpdateVisibility);
 
     private void PlaceBottomRight()
     {

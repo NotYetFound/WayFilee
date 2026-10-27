@@ -39,9 +39,9 @@ public partial class UpdateNoticeWindow : Window
     {
         if (_updates is null)
             return;
-        if (!UpdateService.IsInstalled)
+        if (!_updates.InstallsItself && !_updates.UsesSystemPackageManager)
         {
-            _updates.OpenDownloadPage();
+            await _updates.UpdateAsync();
             Close();
             return;
         }

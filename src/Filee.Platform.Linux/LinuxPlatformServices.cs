@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.Versioning;
 using Filee.Core.Platform;
 using Filee.Core.Settings;
@@ -12,36 +13,14 @@ public sealed class LinuxPlatformServices : IPlatformServices
     private readonly LinuxDesktopIntegration _integration = new(
         XdgDirectory("XDG_CONFIG_HOME", ".config"), XdgDirectory("XDG_DATA_HOME", ".local/share"));
 
-    private static readonly HashSet<string> FileManagers = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "thunar", "nautilus", "org.gnome.nautilus", "nemo", "dolphin", "caja", "pcmanfm", "pcmanfm-qt", "xfdesktop",
-    };
-
     public static bool IsWaylandSession =>
         string.Equals(Environment.GetEnvironmentVariable("XDG_SESSION_TYPE"), "wayland", StringComparison.OrdinalIgnoreCase)
         || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
 
-    public static bool IsGnomeWaylandSession => IsWaylandSession
-        && (Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") ?? "").Split(':')
-            .Contains("GNOME", StringComparer.OrdinalIgnoreCase);
-
-    // Enabling the Shell extension opts in; no /dev/input permission or environment setup is needed on GNOME.
-    // Keep KDE's existing libinput opt-in independent. A value of 0 explicitly disables the GNOME bridge too.
-    public static bool UsesGnomePointerBridge => IsGnomeWaylandSession
-        && Environment.GetEnvironmentVariable("FILEE_WAYLAND_GESTURES") != "0";
-
-    public string? GnomePointerProcess { get; set; }
-    public bool GnomePointerIsDesktop { get; set; }
-
-    // Wayland gestures (experimental) are opt-in: FILEE_WAYLAND_GESTURES=1 on KDE Plasma and Hyprland.
-    // libuiohook's libinput backend reads /dev/input, so /dev/input is only probed once the switch is set,
-    // and it works once the user is in the `input` group. Presses carry no position and a mouse only moves
-    // relatively there; a KWin script or Hyprland window rule places the donut at the cursor.
+    // The libinput hook needs readable /dev/input devices. Joining the input group is an explicit system permission;
+    // Filee never changes group membership itself. KWin places the donut at the cursor.
     private static readonly bool WaylandGestures = IsWaylandSession
-        && Environment.GetEnvironmentVariable("FILEE_WAYLAND_GESTURES") == "1"
-        && WaylandSupport.IsSupportedCompositor(
-            Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP"),
-            Environment.GetEnvironmentVariable("HYPRLAND_INSTANCE_SIGNATURE"))
+        && WaylandSupport.IsSupportedCompositor(Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP"))
         && CanReadInputDevices();
 
     private static bool CanReadInputDevices()
@@ -58,28 +37,22 @@ public sealed class LinuxPlatformServices : IPlatformServices
         return false;
     }
 
-    public bool SupportsGlobalPointerGestures => X11WindowSystem.IsAvailable || WaylandGestures || UsesGnomePointerBridge;
+    public bool SupportsGlobalPointerGestures => WaylandGestures;
     public bool PressCarriesPosition => !WaylandGestures;
     public bool SupportsSelectionShortcut => false;
     public string SelectionShortcutUnavailableReason =>
-        "Linux file managers do not expose a shared selected-file API. Use the Filee context action or its Thunar shortcut.";
-    public string? GlobalPointerGesturesUnavailableReason => SupportsGlobalPointerGestures ? null : IsWaylandSession
-        ? "The cursor-following gesture requires an X11 desktop session. File actions and the drop zone remain available on Wayland."
-        : "The cursor-following gesture requires an X11 display.";
-    public string ThunarShortcutRestartRequired =>
-        "Close Thunar before changing its shortcut, then reopen it to load the Filee action and shortcut.";
+        "Dolphin does not expose a selected-file API to this app. Use its WayFilee context action or the drop zone.";
+    public string? GlobalPointerGesturesUnavailableReason => SupportsGlobalPointerGestures ? null :
+        "KDE drag gestures need readable input devices. Dolphin actions and the drop zone remain available.";
 
     // Wayland can't say which window is under the cursor, so any Ctrl+drag may open the (invisible) donut window;
     // it only shows when files are dragged in, and excluded apps can't be told apart there either.
     public TrashRefusal? MoveToTrash(string path) => FreedesktopTrash.Move(path, Path.Combine(XdgDirectory("XDG_DATA_HOME", ".local/share"), "Trash"));
 
-    public bool IsFileManagerAt(int x, int y) =>
-        UsesGnomePointerBridge && GnomePointerIsDesktop
-        || WaylandGestures || ProcessNameAt(x, y) is { } name && FileManagers.Contains(name);
-    public string? ProcessNameAt(int x, int y) => UsesGnomePointerBridge
-        ? GnomePointerProcess : X11WindowSystem.ProcessNameAt(x, y);
+    public bool IsFileManagerAt(int x, int y) => WaylandGestures;
+    public string? ProcessNameAt(int x, int y) => null;
 
-    public IReadOnlyList<string> RunningAppNames() => IPlatformServices.AppNames(X11WindowSystem.ClientProcessNames());
+    public IReadOnlyList<string> RunningAppNames() => [];
     public IReadOnlyList<string> GetFileManagerSelection() => throw new NotSupportedException(SelectionShortcutUnavailableReason);
     public int SystemDragThreshold => 8;
 
@@ -87,8 +60,8 @@ public sealed class LinuxPlatformServices : IPlatformServices
     {
         get
         {
-            var result = Run("gsettings", ["get", "org.gnome.desktop.interface", "enable-animations"], allowFailure: true);
-            return result?.Trim() == "false";
+            var result = Run("kreadconfig6", ["--file", "kdeglobals", "--group", "KDE", "--key", "AnimationDurationFactor"], allowFailure: true);
+            return double.TryParse(result?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor) && factor <= 0;
         }
     }
 
@@ -131,7 +104,7 @@ public sealed class LinuxPlatformServices : IPlatformServices
         using var process = Process.Start(opener) ?? throw new InvalidOperationException("Could not start xdg-open.");
     }
 
-    public void RaiseTopmost(nint windowHandle) => X11WindowSystem.RaiseTopmost(windowHandle);
+    public void RaiseTopmost(nint windowHandle) { }
 
     /// <summary>XDG_DOWNLOAD_DIR from user-dirs.dirs (a localized desktop calls it "다운로드"), else ~/Downloads.</summary>
     public string DownloadsFolder

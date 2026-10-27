@@ -6,6 +6,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Filee.App.ViewModels;
 using Filee.App.Views;
 using Filee.Core.Conversion;
@@ -23,12 +24,12 @@ public sealed class WindowService(ILocalizer loc, IServiceProvider services, Mem
     private MainWindow? _main;
     private MainWindowPlacement? _mainPlacement;
     private ToastWindow? _toast;
+    private bool _watchingToastJobs;
     private EngineSetupWindow? _engineSetup;
     private UpdateNoticeWindow? _updateNotice;
     private UpdateProgressWindow? _updateProgress;
     internal UpdateProgressWindow? UpdateProgress => _updateProgress;
     private EngineUpdateNoticeWindow? _engineNotice;
-    private FeedbackNoticeWindow? _feedbackNotice;
     private FormatRequestNoticeWindow? _formatRequestNotice;
     private WhatsNewWindow? _whatsNew;
 
@@ -84,7 +85,7 @@ public sealed class WindowService(ILocalizer loc, IServiceProvider services, Mem
             ShowInTaskbar = false,
             WindowDecorations = WindowDecorations.None,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
-            Title = "Filee",
+            Title = "WayFilee",
         };
         host.Show();
         try
@@ -378,13 +379,30 @@ public sealed class WindowService(ILocalizer loc, IServiceProvider services, Mem
         _engineSetup.Show();
     }
 
-    /// <summary>Creates the toast window once; it shows and hides itself with the job list.</summary>
+    /// <summary>Watches for toast jobs. A background start creates no Wayland toplevel.</summary>
     public void EnsureToast()
     {
-        if (_toast is null)
+        var conversions = services.GetRequiredService<ConversionService>();
+        if (!_watchingToastJobs)
         {
-            _toast = new ToastWindow { DataContext = services.GetRequiredService<ConversionService>() };
+            _watchingToastJobs = true;
+            conversions.ToastJobs.CollectionChanged += (_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                if (conversions.ToastJobs.Count > 0)
+                    EnsureToast();
+            });
+        }
+        if (conversions.ToastJobs.Count > 0 && _toast is null)
+        {
+            _toast = new ToastWindow { DataContext = conversions };
             PrepareWindow(_toast);
+            var toast = _toast;
+            toast.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_toast, toast))
+                    _toast = null;
+            };
+            toast.SyncVisibility();
         }
     }
 
@@ -488,17 +506,6 @@ public sealed class WindowService(ILocalizer loc, IServiceProvider services, Mem
         };
         _engineNotice = notice;
         notice.Show();
-    }
-
-    /// <summary>Shows the one-time "Is Filee helping you?" card in the bottom-right corner.</summary>
-    public void ShowFeedbackNotice()
-    {
-        if (_feedbackNotice is not null)
-            return;
-        _feedbackNotice = new FeedbackNoticeWindow();
-        PrepareWindow(_feedbackNotice);
-        _feedbackNotice.Closed += (_, _) => _feedbackNotice = null;
-        _feedbackNotice.Show();
     }
 
     /// <summary>Shows the "Filee is running as administrator" card in the bottom-right corner (once per run).</summary>

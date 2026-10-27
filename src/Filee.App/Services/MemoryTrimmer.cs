@@ -5,7 +5,6 @@
 using System.Diagnostics;
 using Filee.Core.Conversion;
 using Filee.Engines.Infrastructure;
-using Filee.Platform.Windows;
 using Microsoft.Extensions.Logging;
 
 namespace Filee.App.Services;
@@ -74,7 +73,7 @@ public sealed class MemoryTrimmer : IDisposable
         Interlocked.Increment(ref _trims);
     }
 
-    /// <summary>Drops the engines' caches, collects every generation, then trims the working set (Windows).</summary>
+    /// <summary>Drops the engines' caches and collects managed memory.</summary>
     internal static void Trim(ILogger log)
     {
         try
@@ -90,7 +89,6 @@ public sealed class MemoryTrimmer : IDisposable
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: false);
             GC.WaitForPendingFinalizers();
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: false);
-            ProcessMemory.TrimWorkingSet();
             log.LogInformation("Trimmed memory: private {Before} MB → {After} MB (managed heap {Heap} MB) in {Elapsed} ms",
                 before, PrivateMegabytes(), GC.GetTotalMemory(false) / (1024 * 1024), watch.ElapsedMilliseconds);
         }

@@ -16,6 +16,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Filee.App.Services;
+using Filee.Core.Settings;
 
 namespace Filee.App.Controls;
 
@@ -57,6 +58,8 @@ public sealed partial class DonutMenu : Control
         AvaloniaProperty.Register<DonutMenu, double>(nameof(HoleRatio), 0.42);
     public static readonly StyledProperty<double> SliceOpacityProperty =
         AvaloniaProperty.Register<DonutMenu, double>(nameof(SliceOpacity), 0.96);
+    public static readonly StyledProperty<DonutAnimationSpeed> AnimationSpeedProperty =
+        AvaloniaProperty.Register<DonutMenu, DonutAnimationSpeed>(nameof(AnimationSpeed), DonutAnimationSpeed.Normal);
     public static readonly StyledProperty<string?> CenterTitleProperty =
         AvaloniaProperty.Register<DonutMenu, string?>(nameof(CenterTitle));
     public static readonly StyledProperty<string?> CenterSubtitleProperty =
@@ -92,8 +95,8 @@ public sealed partial class DonutMenu : Control
     /// <summary>Gap between slices in pixels (keeps the donut "full" while separating slices).</summary>
     private const double GapPixels = 3;
     private const double PopOut = 7;
-    private const double OpenDuration = 0.42;
-    private const double OpenStagger = 0.028;
+    private const double OpenDuration = 0.22;
+    private const double OpenStagger = 0.015;
     private const double DragStartDistance = 5;
 
     // Pencil (Material "edit") path in a 24×24 box.
@@ -149,6 +152,7 @@ public sealed partial class DonutMenu : Control
     public double OuterRadius { get => GetValue(OuterRadiusProperty); set => SetValue(OuterRadiusProperty, value); }
     public double HoleRatio { get => GetValue(HoleRatioProperty); set => SetValue(HoleRatioProperty, value); }
     public double SliceOpacity { get => GetValue(SliceOpacityProperty); set => SetValue(SliceOpacityProperty, value); }
+    public DonutAnimationSpeed AnimationSpeed { get => GetValue(AnimationSpeedProperty); set => SetValue(AnimationSpeedProperty, value); }
     public string? CenterTitle { get => GetValue(CenterTitleProperty); set => SetValue(CenterTitleProperty, value); }
     public string? CenterSubtitle { get => GetValue(CenterSubtitleProperty); set => SetValue(CenterSubtitleProperty, value); }
 
@@ -217,8 +221,9 @@ public sealed partial class DonutMenu : Control
         ResetProgress();
         _closing = false;
         _closeCallback = null;
-        if (!Motion.Enabled)
+        if (!Motion.Enabled || AnimationSpeed == DonutAnimationSpeed.Instant)
         {
+            _openClock = double.MaxValue;
             Array.Fill(_open, 1);
             InvalidateVisual();
             return;
@@ -233,7 +238,7 @@ public sealed partial class DonutMenu : Control
     {
         if (IsFlipping)
             FinishFlip();
-        if (!Motion.Enabled || Count == 0)
+        if (!Motion.Enabled || AnimationSpeed == DonutAnimationSpeed.Instant || Count == 0)
         {
             done();
             return;
@@ -763,9 +768,17 @@ public sealed partial class DonutMenu : Control
             {
                 _openClock += dt;
                 var done = true;
+                var factor = AnimationSpeed switch
+                {
+                    DonutAnimationSpeed.Fast => 0.55,
+                    DonutAnimationSpeed.Slow => 1.8,
+                    _ => 1.0,
+                };
+                var stagger = (_closing ? 0.01 : OpenStagger) * factor;
+                var duration = (_closing ? 0.16 : OpenDuration) * factor;
                 for (var i = 0; i < _open.Length; i++)
                 {
-                    var t = Math.Clamp((_openClock - i * (_closing ? 0.01 : OpenStagger)) / (_closing ? 0.16 : OpenDuration), 0, 1);
+                    var t = Math.Clamp((_openClock - i * stagger) / duration, 0, 1);
                     _open[i] = _closing ? 1 - EaseInCubic(t) : EaseOutBack(t);
                     done &= t >= 1;
                 }

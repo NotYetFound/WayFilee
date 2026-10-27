@@ -24,11 +24,12 @@ public class ToastWindowTests
         TestServices.EnsureInitialized("en");
         var service = AppHost.Get<ConversionService>();
         service.ToastJobs.Clear();
-        var toast = new ToastWindow { DataContext = service };
         try
         {
             for (var round = 0; round < 3; round++)
             {
+                // Wayland closes the empty toplevel; the next job uses a fresh one.
+                var toast = new ToastWindow { DataContext = service };
                 var job = new JobViewModel(new ConversionJob(["C:/clip.mp4"], new Preset { TargetFormat = "mp4" }, "MP4"),
                     AppHost.Get<ILocalizer>(), AppHost.Get<IPlatformServices>(), _ => { });
                 service.Jobs.Insert(0, job);
@@ -42,12 +43,12 @@ public class ToastWindowTests
                 Pump();
                 Assert.False(toast.IsVisible);
                 Assert.Equal(0, Cards(toast));
+                Assert.Null(toast.PlatformImpl);
             }
         }
         finally
         {
             service.ToastJobs.Clear();
-            toast.Close();
         }
     }
 

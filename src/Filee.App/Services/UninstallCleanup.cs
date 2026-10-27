@@ -3,8 +3,6 @@
 using Filee.Core.Platform;
 using Filee.Core.Settings;
 using Filee.Platform.Linux;
-using Filee.Platform.MacOS;
-using Filee.Platform.Windows;
 
 namespace Filee.App.Services;
 
@@ -12,9 +10,7 @@ internal static class UninstallCleanup
 {
     public static bool Run()
     {
-        IPlatformServices platform = OperatingSystem.IsWindows() ? new WindowsPlatformServices()
-            : OperatingSystem.IsMacOS() ? new MacOSPlatformServices()
-            : OperatingSystem.IsLinux() ? new LinuxPlatformServices() : new NullPlatformServices();
+        var platform = new LinuxPlatformServices();
         var succeeded = true;
         // A copy with its own data folder (FILEE_DATA_DIR) never registered anything: only its engines go.
         var integrated = UserDataStore.OverrideDirectory is null;
@@ -22,19 +18,6 @@ internal static class UninstallCleanup
         {
             Clean(() => platform.SetContextMenu(false, "", ""));
             Clean(() => platform.SetStartWithSystem(false, ""));
-        }
-        if (integrated && OperatingSystem.IsLinux() && platform is LinuxPlatformServices linux)
-            Clean(() => linux.SetThunarShortcut(null));
-        if (integrated && OperatingSystem.IsWindows() && ExplorerMenuRegistration.IsSupportedOs)
-        {
-            Clean(() =>
-            {
-                var task = ExplorerMenuRegistration.RemoveAsync(allowElevation: false);
-                if (!task.Wait(TimeSpan.FromSeconds(40)))
-                    throw new TimeoutException("Timed out removing the Explorer menu.");
-                if (!task.Result.Succeeded)
-                    throw new IOException(task.Result.Error ?? "Could not remove the Explorer menu.");
-            });
         }
         if (succeeded)
         {

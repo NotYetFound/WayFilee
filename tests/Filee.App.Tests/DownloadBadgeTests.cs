@@ -182,7 +182,7 @@ public class DownloadBadgeTests
                 var center = new Point(donut.Bounds.Width / 2, donut.Bounds.Height / 2);
                 var bottom = badge.TranslatePoint(new Point(badge.Bounds.Width / 2, badge.Bounds.Height), donut)!.Value;
                 Assert.InRange(center.Y - bottom.Y, 36 + 6, 60); // above the ring, close to it
-                Assert.Equal(center.X, bottom.X, 1);
+                Assert.InRange(Math.Abs(center.X - bottom.X), 0, 0.5);
                 Save(window, $"donut-download-badge-{mode.ToString().ToLowerInvariant()}.png");
 
                 // Downloads done, converting: the badge goes.

@@ -1,11 +1,11 @@
-<!-- Progress cards in the bottom-right corner. Shows itself while ToastJobs is non-empty, hides when empty. -->
+<!-- Progress cards in the bottom-right corner. Created for toast jobs and closed when empty. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Filee.App.ViewModels"
         xmlns:s="using:Filee.App.Services"
         x:Class="Filee.App.Views.ToastWindow"
         x:DataType="s:ConversionService"
-        Title="Filee"
+        Title="WayFilee"
         Width="360"
         SizeToContent="Height"
         WindowDecorations="None"

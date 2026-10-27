@@ -37,7 +37,7 @@ public sealed class SingleInstance : IDisposable
     internal static string NameFor(string userName, string? dataDirectoryOverride)
     {
         var key = dataDirectoryOverride is null ? userName : userName + "|" + dataDirectoryOverride.ToUpperInvariant();
-        return "Filee-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..12];
+        return "WayFilee-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..12];
     }
 
     /// <summary>The instance under another name (tests, which must not reach a Filee that is running).</summary>
@@ -118,7 +118,6 @@ public sealed class SingleInstance : IDisposable
             {
                 using var client = new NamedPipeClientStream(".", _name, PipeDirection.Out, PipeOptions.CurrentUserOnly);
                 client.Connect((int)Math.Clamp(left.TotalMilliseconds, 100, 1000));
-                Filee.Platform.Windows.Foreground.AllowOtherProcess(); // its donut takes the focus (Esc, click away)
                 JsonSerializer.Serialize(client, args, AppJsonContext.Default.StringArray);
                 return ForwardResult.Delivered;
             }

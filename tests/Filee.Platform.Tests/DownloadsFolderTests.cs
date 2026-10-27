@@ -2,8 +2,6 @@
 
 using Filee.Core.Platform;
 using Filee.Platform.Linux;
-using Filee.Platform.MacOS;
-using Filee.Platform.Windows;
 
 namespace Filee.Platform.Tests;
 
@@ -22,25 +20,9 @@ public class DownloadsFolderTests
     }
 
     [Fact]
-    public void Each_platform_names_an_absolute_downloads_folder()
+    public void Linux_names_an_absolute_downloads_folder()
     {
-        IPlatformServices platform = new NullPlatformServices();
-        if (OperatingSystem.IsWindows())
-            platform = new WindowsPlatformServices();
-        else if (OperatingSystem.IsMacOS())
-            platform = new MacOSPlatformServices();
-        else if (OperatingSystem.IsLinux())
-            platform = new LinuxPlatformServices();
+        var platform = new LinuxPlatformServices();
         Assert.True(Path.IsPathFullyQualified(platform.DownloadsFolder));
-        Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
-            ((IPlatformServices)new NullPlatformServices()).DownloadsFolder);
-    }
-
-    [Fact]
-    public void The_donut_accepts_drags_that_offer_only_a_web_address_or_a_picture()
-    {
-        Assert.Contains("public.url", PasteboardPaths.DragTypes);
-        Assert.Contains("public.html", PasteboardPaths.DragTypes);
-        Assert.Contains("public.jpeg", PasteboardPaths.DragTypes);
     }
 }

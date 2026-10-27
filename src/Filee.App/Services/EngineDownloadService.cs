@@ -56,7 +56,7 @@ public sealed partial class EnginePackageState : ObservableObject
         {
             if (EngineDownloads.CanDownload(Package))
                 return null;
-            var system = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsLinux() ? "linux" : "windows";
+            const string system = "linux";
             var key = $"engines.guidance.{system}.{Package.Id}";
             var text = _loc[key];
             return text != key ? text : _loc.Format($"engines.guidance.{system}", Name);

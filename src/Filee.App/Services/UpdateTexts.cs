@@ -6,11 +6,21 @@ namespace Filee.App.Services;
 
 public static class UpdateTexts
 {
-    /// <summary>Button text: "Update" in an installed copy (it installs by itself), "Download" in a portable one.</summary>
-    public static string ButtonKey => UpdateService.IsInstalled ? "update.install" : "update.download";
+    /// <summary>Button text follows the way this copy was installed.</summary>
+    public static string ButtonKey => UpdateService.InstallChannel switch
+    {
+        LinuxUpdateChannel.UserInstall => "update.install",
+        LinuxUpdateChannel.SystemPackage => "update.install",
+        _ => "update.download",
+    };
 
     /// <summary>What the update button does, for the notice and tooltips.</summary>
-    public static string HowKey => UpdateService.IsInstalled ? "update.notice_text" : "update.notice_text_portable";
+    public static string HowKey => UpdateService.InstallChannel switch
+    {
+        LinuxUpdateChannel.UserInstall => "update.notice_text",
+        LinuxUpdateChannel.SystemPackage => "update.notice_text_package",
+        _ => "update.notice_text_archive",
+    };
 
     /// <summary>Short label for the sidebar button and the tray menu ("Update to 1.4.0", "Downloading… 42%").</summary>
     public static string Short(UpdateService updates, ILocalizer loc) => updates.Step switch

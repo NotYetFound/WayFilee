@@ -246,7 +246,9 @@ public class MaterialYouThemeTests
         {
             var vm = new ThemePageViewModel(store, AppHost.Get<ILocalizer>(), AppHost.Get<IPlatformServices>());
 
-            // Default style is Soft
+            // New installations start with Material You, while Soft remains available.
+            Assert.True(vm.IsMaterialYou);
+            vm.SetStyleCommand.Execute(ThemeStyle.Soft);
             Assert.False(vm.IsMaterialYou);
 
             // Switch to Material You
@@ -281,6 +283,7 @@ public class MaterialYouThemeTests
         {
             var store = new UserDataStore(directory);
             store.Load();
+            store.Settings.Theme.Style = ThemeStyle.Soft;
             var loc = AppHost.Get<ILocalizer>();
             var platform = AppHost.Get<IPlatformServices>();
             var themeService = AppHost.Get<ThemeService>();

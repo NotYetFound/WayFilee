@@ -36,11 +36,10 @@ public sealed class UserDataStore
     public static string? OverrideDirectory => DirectoryFrom(Environment.GetEnvironmentVariable(DirectoryVariable));
 
     /// <summary>
-    /// Default data directory: %APPDATA%\Filee on Windows, ~/Library/Application Support/Filee on macOS, or the
-    /// folder in <see cref="DirectoryVariable"/>.
+    /// Default data directory for this fork, or the folder in <see cref="DirectoryVariable"/>.
     /// </summary>
     public static string DefaultDirectory =>
-        OverrideDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Filee");
+        OverrideDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WayFilee");
 
     internal static string? DirectoryFrom(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(value.Trim()));

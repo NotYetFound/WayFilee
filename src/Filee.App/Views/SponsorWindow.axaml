@@ -4,7 +4,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="using:Filee.App.Views"
         x:Class="Filee.App.Views.SponsorWindow"
-        Title="{DynamicResource sponsor.title}"
+        Title="{DynamicResource about.sponsor}"
         Icon="avares://Filee/Assets/Icons/filee.ico"
         Width="420"
         SizeToContent="Height"
@@ -22,8 +22,9 @@
   </Window.Styles>
   <StackPanel Margin="22" Spacing="14">
     <StackPanel Spacing="4">
-      <TextBlock Classes="h2" Text="{DynamicResource sponsor.title}" />
+      <TextBlock Classes="h2" Text="{DynamicResource about.sponsor}" />
       <TextBlock Classes="caption" TextWrapping="Wrap" Text="{DynamicResource sponsor.lead}" />
+      <TextBlock Classes="caption" TextWrapping="Wrap" Text="{DynamicResource sponsor.upstream_notice}" />
     </StackPanel>
     <ItemsControl x:Name="Ways">
       <ItemsControl.ItemsPanel>

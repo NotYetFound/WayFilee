@@ -9,48 +9,50 @@ public sealed class LinuxDesktopIntegrationTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "Filee.Platform.Tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void ContextMenuRoundTripPreservesOtherThunarActions()
+    public void ContextMenuCreatesOnlyDolphinAction()
     {
         var configuration = Path.Combine(_root, "config");
         var data = Path.Combine(_root, "data");
-        var path = Path.Combine(configuration, "Thunar", "uca.xml");
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        const string existing = "<action><name>Keep me</name><unique-id>other</unique-id><command>echo unchanged</command><other-files /></action>";
-        File.WriteAllText(path, "<actions>" + existing + "</actions>");
         var integration = new LinuxDesktopIntegration(configuration, data);
 
         integration.SetContextMenu(true, "/opt/Filee's app/Filee.App", "Filee로 변환 & test");
         integration.SetContextMenu(true, "/opt/new/Filee.App", "Updated");
 
-        var document = XDocument.Load(path);
-        Assert.Equal(2, document.Root!.Elements("action").Count());
-        Assert.Equal("echo unchanged", document.Root.Elements("action")
-            .Single(action => (string?)action.Element("unique-id") == "other").Element("command")!.Value);
-        Assert.Equal("'/opt/new/Filee.App' --convert %F", document.Root.Elements("action")
-            .Single(action => (string?)action.Element("unique-id") == LinuxDesktopIntegration.ThunarActionId).Element("command")!.Value);
-        Assert.Contains("exec '/opt/new/Filee.App' --convert \"$@\"", File.ReadAllText(Path.Combine(data, "nautilus", "scripts", "Filee")));
+        var path = Path.Combine(data, "kio", "servicemenus", "wayfilee.desktop");
+        Assert.Contains("Exec=\"/opt/new/Filee.App\" --convert %F", File.ReadAllText(path));
+        Assert.False(Directory.Exists(Path.Combine(configuration, "Thunar")));
+        Assert.False(Directory.Exists(Path.Combine(data, "nautilus")));
 
         integration.SetContextMenu(false, "", "");
 
-        document = XDocument.Load(path);
-        Assert.Single(document.Root!.Elements("action"));
-        Assert.Equal("other", document.Root.Element("action")!.Element("unique-id")!.Value);
-        Assert.False(File.Exists(Path.Combine(data, "kio", "servicemenus", "filee.desktop")));
+        Assert.False(File.Exists(path));
     }
 
     [Fact]
-    public void MalformedThunarConfigurationIsNotOverwritten()
+    public void ExistingThunarConfigurationIsNotTouched()
     {
         var configuration = Path.Combine(_root, "config");
         var path = Path.Combine(configuration, "Thunar", "uca.xml");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "<actions><action>");
 
-        Assert.Throws<System.Xml.XmlException>(() =>
-            new LinuxDesktopIntegration(configuration, Path.Combine(_root, "data"))
-                .SetContextMenu(true, "/opt/Filee.App", "Convert"));
+        new LinuxDesktopIntegration(configuration, Path.Combine(_root, "data"))
+            .SetContextMenu(true, "/opt/Filee.App", "Convert");
         Assert.Equal("<actions><action>", File.ReadAllText(path));
-        Assert.False(Directory.Exists(Path.Combine(_root, "data")));
+        Assert.True(File.Exists(Path.Combine(_root, "data", "kio", "servicemenus", "wayfilee.desktop")));
+    }
+
+    [Fact]
+    public void ForeignDolphinActionIsNotReplacedOrRemoved()
+    {
+        var path = Path.Combine(_root, "data", "kio", "servicemenus", "wayfilee.desktop");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "[Desktop Entry]\nName=Other application\n");
+        var integration = new LinuxDesktopIntegration(Path.Combine(_root, "config"), Path.Combine(_root, "data"));
+
+        Assert.Throws<IOException>(() => integration.SetContextMenu(true, "/opt/WayFilee", "Convert"));
+        integration.SetContextMenu(false, "", "");
+        Assert.Contains("Other application", File.ReadAllText(path));
     }
 
     [Fact]
@@ -58,7 +60,7 @@ public sealed class LinuxDesktopIntegrationTests : IDisposable
     {
         var integration = new LinuxDesktopIntegration(_root, Path.Combine(_root, "data"));
         integration.SetAutostart(true, "/opt/Filee test/Filee.App");
-        var path = Path.Combine(_root, "autostart", "filee.desktop");
+        var path = Path.Combine(_root, "autostart", "wayfilee.desktop");
         Assert.Contains("Exec=\"/opt/Filee test/Filee.App\" --background\n", File.ReadAllText(path));
         Assert.Throws<ArgumentException>(() => integration.SetAutostart(true, "/opt/Filee\nExec=bad"));
         Assert.Contains("Exec=\"/opt/Filee test/Filee.App\" --background\n", File.ReadAllText(path));

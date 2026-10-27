@@ -48,14 +48,6 @@ public partial class App : Application
     private void Start(IClassicDesktopStyleApplicationLifetime desktop)
     {
         var log = AppHost.Get<ILogger<App>>();
-        // macOS: "Convert with Filee" in Finder's right-click menu. Registered first, so a service picked while
-        // Filee wasn't running is delivered as soon as it starts. A request without files Filee can find (another
-        // file manager put its selection on the pasteboard in a form Filee doesn't read) is logged with what it held.
-        if (OperatingSystem.IsMacOS())
-            Filee.Platform.MacOS.MacOSServicesProvider.Register(
-                files => Dispatcher.UIThread.Post(() => HandleCommandLine(CommandLine.Parse(["--convert", .. files]))),
-                types => log.LogWarning("Convert with Filee was picked, but the request named no existing file; it held: {Types}",
-                    types.Count == 0 ? "nothing" : string.Join(", ", types)));
         // Exceptions in UI event handlers end Filee; write them down first (they are not marked handled).
         Dispatcher.UIThread.UnhandledException += (_, e) =>
             log.LogCritical(e.Exception, "Unhandled exception on the UI thread");
@@ -122,32 +114,10 @@ public partial class App : Application
         };
         triggers.Start();
         log.LogInformation("Filee {Version} started", UpdateService.CurrentVersion);
-        // Which way the transparent windows (donut, toast) are drawn, for reports of one that isn't see-through (#269).
-        if (OperatingSystem.IsWindows())
-        {
-            log.LogInformation("{Rendering}", WindowsRendering.Describe(Environment.GetEnvironmentVariable(WindowsRendering.Variable)));
-            TransparentWindows.Watch(log);
-        }
-        // macOS: ask for Accessibility with the system's own alert when the user opened Filee (not at sign-in) and
-        // a drag gesture is on, once ever (see ShouldAskForPermission). The home page keeps a reminder until it is
-        // given. Asked once the main window is up: asked earlier, the alert ends up behind it.
-        if (OperatingSystem.IsMacOS() && !Program.Options.Background
-            && platform is Filee.Platform.MacOS.MacOSPlatformServices mac
-            && TriggerService.ShouldAskForPermission(store.Settings, triggers.NeedsPermission))
-            DispatcherTimer.RunOnce(() =>
-            {
-                if (!OperatingSystem.IsMacOS() || !TriggerService.ShouldAskForPermission(store.Settings, triggers.NeedsPermission))
-                    return;
-                store.Settings.AccessibilityPromptShown = true;
-                store.SaveSettings();
-                mac.RequestAccessibilityPermission();
-            }, TimeSpan.FromSeconds(1.5));
-
         store.SettingsChanged += (_, _) => ApplySettings(store.Settings);
 
         AppHost.Get<TrayService>().Create(this);
         AppHost.Get<WindowService>().EnsureToast();
-        AppHost.Get<ConversionService>().FeedbackDue += (_, _) => AppHost.Get<WindowService>().ShowFeedbackNotice();
         AppHost.Get<WatchFolderService>().Start();
         // Originals of files from a browser that a crash kept from being deleted ("Save only the converted file").
         _ = Task.Run(() => Filee.Core.Web.WebDrop.DeleteStale(Filee.Core.Web.WebDrop.DefaultWorkRoot, TimeSpan.FromDays(1)));
@@ -182,24 +152,7 @@ public partial class App : Application
                         || Program.Options.ConvertFiles.Count > 0,
             updated: Program.Options.WhatsNew, updatedFrom: Program.Options.UpdatedFrom);
         HandleCommandLine(Program.Options, firstLaunch: true);
-        if (OperatingSystem.IsMacOS())
-            this.TryGetFeature<IActivatableLifetime>()?.Activated += (_, e) =>
-            {
-                if (e.Kind == ActivationKind.Reopen)
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        // Clicking the Dock icon or opening Filee again in Finder brings the window back, as Mac apps do
-                        // (#232), also while it only runs in the background.
-                        AppHost.Get<WindowService>().ShowMain(store.Settings.FirstRunCompleted ? null : "home");
-                        if (!store.Settings.ShowInDock && !platform.TrySetShowInDock(false))
-                            log.LogWarning("Could not restore the macOS Dock visibility policy after reopening Filee");
-                    });
-            };
         WatchForUpdates(store);
-        // Filee runs as administrator while Explorer doesn't (an installer started "as administrator" started it):
-        // say so once, next to the tray, and on the Home page for as long as it lasts.
-        if (AppHost.Get<ElevationService>().ShellCannotReachFilee)
-            DispatcherTimer.RunOnce(() => AppHost.Get<WindowService>().ShowElevationNotice(), TimeSpan.FromSeconds(2));
     }
 
     private void ListenForLaterLaunches(SingleInstance instance, ILogger log)

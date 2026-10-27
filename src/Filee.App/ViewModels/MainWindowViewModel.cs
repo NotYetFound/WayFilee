@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using Filee.App.Services;
 using Filee.App.ViewModels.Pages;
 using Filee.Core.Localization;
+using Filee.Core.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Filee.App.ViewModels;
@@ -34,6 +35,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly IServiceProvider _services;
     private readonly ILocalizer _loc;
+    private readonly UserDataStore _store;
+    private readonly Dictionary<string, ObservableObject> _cachedPages = new();
     private bool _disposed;
 
     /// <summary>The repository, for the GitHub button above the version.</summary>
@@ -43,6 +46,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _services = services;
         _loc = loc;
+        _store = services.GetRequiredService<UserDataStore>();
         Updates = updates;
         updates.PropertyChanged += OnUpdatesChanged;
         RefreshVersionTexts();
@@ -61,6 +65,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         foreach (var item in Items)
             item.Refresh(loc);
         loc.LanguageChanged += OnLanguageChanged;
+        _store.LibraryChanged += OnLibraryChanged;
         _selectedItem = Items[0];
         _currentPage = CreatePage(Items[0]);
     }
@@ -99,7 +104,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         foreach (var item in Items)
             item.Refresh(_loc);
         RefreshVersionTexts();
+        foreach (var cached in _cachedPages.Values.Where(page => !ReferenceEquals(page, CurrentPage)))
+            (cached as IDisposable)?.Dispose();
+        _cachedPages.Clear();
         CurrentPage = CreatePage(SelectedItem); // rebuild so code-generated labels update too
+        if (SelectedItem.Key is "toolbar" or "presets")
+            _cachedPages[SelectedItem.Key] = CurrentPage;
+    }
+
+    private void OnLibraryChanged(object? sender, EventArgs e)
+    {
+        if (_cachedPages.Remove("presets", out var page))
+        {
+            if (!ReferenceEquals(page, CurrentPage))
+                (page as IDisposable)?.Dispose();
+        }
     }
 
     private void RefreshVersionTexts()
@@ -123,11 +142,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnSelectedItemChanged(NavItem? oldValue, NavItem newValue)
     {
         if (!Choices.Restore(oldValue, newValue, v => SelectedItem = v))
-            CurrentPage = CreatePage(newValue);
+        {
+            CurrentPage = newValue.Key is "toolbar" or "presets"
+                ? _cachedPages.TryGetValue(newValue.Key, out var cached) ? cached : _cachedPages[newValue.Key] = CreatePage(newValue)
+                : CreatePage(newValue);
+        }
     }
 
     // Old pages may hold event subscriptions on long-lived services.
-    partial void OnCurrentPageChanged(ObservableObject? oldValue, ObservableObject newValue) => (oldValue as IDisposable)?.Dispose();
+    partial void OnCurrentPageChanged(ObservableObject? oldValue, ObservableObject newValue)
+    {
+        if (oldValue is not null && !_cachedPages.Values.Any(page => ReferenceEquals(page, oldValue)))
+            (oldValue as IDisposable)?.Dispose();
+    }
 
     private ObservableObject CreatePage(NavItem item) =>
         (ObservableObject)ActivatorUtilities.CreateInstance(_services, item.PageType);
@@ -139,6 +166,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         _disposed = true;
         Updates.PropertyChanged -= OnUpdatesChanged;
         _loc.LanguageChanged -= OnLanguageChanged;
+        _store.LibraryChanged -= OnLibraryChanged;
         (CurrentPage as IDisposable)?.Dispose();
+        foreach (var cached in _cachedPages.Values.Where(page => !ReferenceEquals(page, CurrentPage)))
+            (cached as IDisposable)?.Dispose();
+        _cachedPages.Clear();
     }
 }

@@ -1646,11 +1646,6 @@ public class RenderTests
             updates.Step = UpdateStep.Idle;
             notice.Close();
 
-            var feedback = new FeedbackNoticeWindow();
-            feedback.Show();
-            Pump();
-            Save(feedback, $"feedback-notice-{language}.png");
-            feedback.Close();
         }
         finally
         {

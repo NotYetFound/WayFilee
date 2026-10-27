@@ -2,8 +2,6 @@
 // anything else leaves the file where it is with a reason.
 
 using Filee.Platform.Linux;
-using Filee.Platform.MacOS;
-using Filee.Platform.Windows;
 
 // Each test checks the OS it needs; the mount and missing-file checks are plain string and file work.
 #pragma warning disable CA1416
@@ -17,70 +15,6 @@ public sealed class TrashTests : IDisposable
     public TrashTests() => Directory.CreateDirectory(_root);
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
-
-    [Fact]
-    public void A_file_open_elsewhere_stays_in_the_Recycle_Bins_place()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Requires Windows.");
-            return;
-        }
-        var file = Path.Combine(_root, "open.png");
-        File.WriteAllText(file, "x");
-
-        Filee.Core.Platform.TrashRefusal? refusal;
-        using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
-            refusal = new WindowsPlatformServices().MoveToTrash(file);
-
-        Assert.Equal("trash.in_use", refusal?.ReasonKey);
-        Assert.Equal("x", File.ReadAllText(file));
-    }
-
-    [Fact]
-    public void Windows_recycles_and_never_deletes_for_good()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Requires Windows.");
-            return;
-        }
-        // A subst drive reports itself as fixed, but has no Recycle Bin: Windows would delete the file outright.
-        var letter = "ZYXWVUTSRQPONMLKJ".Select(c => $"{c}:").First(d => !Directory.Exists(d + "\\"));
-        Assert.Equal(0, Subst(letter, _root));
-        try
-        {
-            var file = Path.Combine(letter + "\\", "kept.png");
-            File.WriteAllText(file, "x");
-
-            var refusal = new WindowsPlatformServices().MoveToTrash(file);
-
-            Assert.Equal("trash.no_recycle_bin", refusal?.ReasonKey);
-            Assert.Equal("x", File.ReadAllText(file));
-        }
-        finally
-        {
-            Subst(letter, null);
-        }
-
-        // On the real drive it goes to the Recycle Bin.
-        var recycled = Path.Combine(_root, $"filee-test-recycle-{Guid.NewGuid():N}.txt");
-        File.WriteAllText(recycled, "x");
-        Assert.Null(new WindowsPlatformServices().MoveToTrash(recycled));
-        Assert.False(File.Exists(recycled));
-
-        static int Subst(string drive, string? folder)
-        {
-            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("subst.exe")
-            {
-                ArgumentList = { drive, folder ?? "/D" },
-                CreateNoWindow = true,
-                UseShellExecute = false,
-            })!;
-            process.WaitForExit();
-            return process.ExitCode;
-        }
-    }
 
     [Fact]
     public void A_mount_holds_only_its_own_folders()
@@ -97,10 +31,6 @@ public sealed class TrashTests : IDisposable
     public void A_missing_file_gives_a_reason()
     {
         var missing = Path.Combine(_root, "gone.png");
-        if (OperatingSystem.IsWindows())
-            Assert.NotNull(new WindowsPlatformServices().MoveToTrash(missing));
-        else if (OperatingSystem.IsMacOS())
-            Assert.NotNull(new MacOSPlatformServices().MoveToTrash(missing));
         Assert.NotNull(FreedesktopTrash.Move(missing, Path.Combine(_root, "Trash")));
     }
 
@@ -135,18 +65,4 @@ public sealed class TrashTests : IDisposable
         Assert.Equal("3", File.ReadAllText(Path.Combine(trash, "files", "my photo 4.png")));
     }
 
-    [Fact]
-    public void The_macOS_Trash_takes_the_file()
-    {
-        if (!OperatingSystem.IsMacOS())
-        {
-            Assert.Skip("Requires macOS.");
-            return;
-        }
-        var file = Path.Combine(_root, "trash-me.png");
-        File.WriteAllText(file, "x");
-
-        Assert.Null(new MacOSPlatformServices().MoveToTrash(file));
-        Assert.False(File.Exists(file));
-    }
 }

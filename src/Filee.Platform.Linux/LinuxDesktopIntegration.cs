@@ -7,7 +7,7 @@ namespace Filee.Platform.Linux;
 
 internal sealed class LinuxDesktopIntegration(string configHome, string dataHome)
 {
-    internal const string ThunarActionId = "filee-convert";
+    internal const string ThunarActionId = "wayfilee-convert";
     internal const string ThunarAcceleratorPath = "<Actions>/ThunarActions/uca-action-" + ThunarActionId;
 
     internal static string? ToThunarAccelerator(TriggerGesture gesture)
@@ -90,43 +90,39 @@ internal sealed class LinuxDesktopIntegration(string configHome, string dataHome
 
     public void SetAutostart(bool enabled, string executablePath)
     {
-        var path = Path.Combine(configHome, "autostart", "filee.desktop");
+        var path = Path.Combine(configHome, "autostart", "wayfilee.desktop");
         if (!enabled)
         {
-            File.Delete(path);
+            if (IsManaged(path)) File.Delete(path);
             return;
         }
-        Write(path, $"[Desktop Entry]\nType=Application\nName=Filee\nExec={DesktopArgument(executablePath)} --background\nTerminal=false\nX-GNOME-Autostart-enabled=true\n");
+        RefuseForeignFile(path);
+        Write(path, $"[Desktop Entry]\nType=Application\nName=WayFilee\nExec={DesktopArgument(executablePath)} --background\nTerminal=false\nX-WayFilee-Managed=true\n");
     }
 
     public void SetContextMenu(bool enabled, string executablePath, string label)
     {
-        var thunarPath = Path.Combine(configHome, "Thunar", "uca.xml");
-        var menuPaths = new[]
-        {
-            Path.Combine(dataHome, "Thunar", "sendto", "filee.desktop"),
-            Path.Combine(dataHome, "nautilus", "scripts", "Filee"),
-            Path.Combine(dataHome, "nemo", "actions", "filee.nemo_action"),
-            Path.Combine(dataHome, "kio", "servicemenus", "filee.desktop"),
-        };
-        var thunar = LoadThunarActions(thunarPath);
-        UpdateThunarAction(thunar, enabled, executablePath, label);
+        var path = Path.Combine(dataHome, "kio", "servicemenus", "wayfilee.desktop");
         if (!enabled)
         {
-            if (File.Exists(thunarPath))
-                Write(thunarPath, thunar.ToString());
-            foreach (var path in menuPaths)
-                File.Delete(path);
+            if (IsManaged(path)) File.Delete(path);
             return;
         }
 
+        RefuseForeignFile(path);
         var command = $"{DesktopArgument(executablePath)} --convert %F";
         var name = DesktopValue(label);
-        Write(thunarPath, thunar.ToString());
-        Write(menuPaths[0], $"[Desktop Entry]\nType=Application\nName={name}\nExec={command}\nIcon=document-save-as\nTerminal=false\n");
-        Write(menuPaths[1], $"#!/bin/sh\n[ \"$#\" -gt 0 ] || exit 0\nfor file do\n  case \"$file\" in\n    /*) set -- \"$@\" \"$file\" ;;\n    *) set -- \"$@\" \"$PWD/$file\" ;;\n  esac\n  shift\ndone\nexec {ShellArgument(executablePath)} --convert \"$@\"\n", executable: true);
-        Write(menuPaths[2], $"[Nemo Action]\nName={name.Replace("%", "%%", StringComparison.Ordinal)}\nExec={command}\nSelection=notnone\nExtensions=nodirs;\nUriScheme=file\nIcon-Name=document-save-as\n");
-        Write(menuPaths[3], $"[Desktop Entry]\nType=Service\nMimeType=application/octet-stream;\nActions=convert;\nX-KDE-Protocols=file\n\n[Desktop Action convert]\nName={name}\nIcon=document-save-as\nExec={command}\n", executable: true);
+        Write(path, $"[Desktop Entry]\nType=Service\nMimeType=application/octet-stream;\nActions=convert;\nX-KDE-Protocols=file\nX-WayFilee-Managed=true\n\n[Desktop Action convert]\nName={name}\nIcon=document-save-as\nExec={command}\n", executable: true);
+    }
+
+    private static bool IsManaged(string path) =>
+        File.Exists(path) && new FileInfo(path).LinkTarget is null &&
+        File.ReadAllLines(path).Any(line => line == "X-WayFilee-Managed=true");
+
+    private static void RefuseForeignFile(string path)
+    {
+        if ((File.Exists(path) || new FileInfo(path).LinkTarget is not null) && !IsManaged(path))
+            throw new IOException($"Refusing to replace an existing file not created by WayFilee: {path}");
     }
 
     internal static void UpdateThunarAction(XDocument document, bool enabled, string executablePath, string label)

@@ -45,7 +45,7 @@ public sealed class ThemeService(IPlatformServices platform)
     ];
 
     /// <summary>Currently applied theme style.</summary>
-    public ThemeStyle CurrentStyle { get; private set; } = ThemeStyle.Soft;
+    public ThemeStyle CurrentStyle { get; private set; } = ThemeStyle.MaterialYou;
 
     /// <summary>True when Material You is currently applied.</summary>
     public bool IsMaterialYou => CurrentStyle == ThemeStyle.MaterialYou;

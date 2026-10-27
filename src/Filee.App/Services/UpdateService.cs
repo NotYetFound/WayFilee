@@ -1,8 +1,5 @@
-// Update check against GitHub Releases. When a newer version is out the app says so (sidebar, notice, tray). In an
-// installed copy "Update" downloads the new installer, checks it against the release's SHA256SUMS file and that the
-// publisher who signed this copy signed it too (Authenticode), and runs it;
-// Setup closes Filee, updates it in place (settings are kept) and starts it again. A portable copy, a copy run from
-// source, or a failed download opens a download page instead. The check works in every build.
+// GitHub Releases provide update notices and verified assets. Per-user tar installs run
+// install.sh --upgrade; distro packages hand the verified file to their package manager.
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -16,7 +13,6 @@ using System.Text.Json;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Filee.Core.Settings;
-using Filee.Platform.Windows;
 using Microsoft.Extensions.Logging;
 
 namespace Filee.App.Services;
@@ -34,6 +30,13 @@ public enum UpdateStep
     Cancelled,
 }
 
+public enum LinuxUpdateChannel
+{
+    Portable,
+    UserInstall,
+    SystemPackage,
+}
+
 public sealed partial class UpdateService : ObservableObject
 {
     /// <summary>How often a running Filee (it lives in the tray for days) looks for a new version.</summary>
@@ -41,15 +44,6 @@ public sealed partial class UpdateService : ObservableObject
 
     /// <summary>A download that receives nothing for this long is given up.</summary>
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(30);
-
-    /// <summary>Win32 ERROR_CANCELLED: the user declined the UAC prompt.</summary>
-    private const int ErrorCancelled = 1223;
-
-    /// <summary>
-    /// Setup without the wizard: only its progress window shows. Updates keep the earlier choices anyway, and Setup
-    /// starts Filee again when it is done.
-    /// </summary>
-    internal const string InstallerArguments = "/SILENT /NORESTART";
 
     private readonly ILogger<UpdateService> _log;
     private readonly HttpClient _http;
@@ -74,7 +68,7 @@ public sealed partial class UpdateService : ObservableObject
     /// <summary>GitHub repository from Directory.Build.props (FileeRepositoryUrl).</summary>
     public static string RepositoryUrl =>
         typeof(UpdateService).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(a => a.Key == "RepositoryUrl")?.Value ?? "https://github.com/KnifeLemon/Filee";
+            .FirstOrDefault(a => a.Key == "RepositoryUrl")?.Value ?? "https://github.com/NotYetFound/WayFilee";
 
     public static string CurrentVersion =>
         typeof(UpdateService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
@@ -83,30 +77,35 @@ public sealed partial class UpdateService : ObservableObject
     /// <summary>GitHub's "new issue" page (bug report or feature request template).</summary>
     public static string NewIssueUrl => RepositoryUrl.TrimEnd('/') + "/issues/new/choose";
 
-    /// <summary>Release page with every file, including the portable zip.</summary>
+    /// <summary>Release page with every published Linux archive and package.</summary>
     public static string LatestReleaseUrl => RepositoryUrl.TrimEnd('/') + "/releases/latest";
 
-    /// <summary>The website: one big download button, friendlier than the GitHub release page.</summary>
-    public const string WebsiteUrl = "https://filee.sh/";
+    /// <summary>WayFilee's repository landing page.</summary>
+    public const string WebsiteUrl = "https://github.com/NotYetFound/WayFilee";
 
     /// <summary>
-    /// True when this copy was installed by Setup on Windows (uninstall.exe; the Inno Setup installer of 1.x put unins000.exe there)
-    /// or by install.sh on Linux (.filee-package marker containing com.filee.app).
-    /// Only then can the new installer update it in place; the portable zip and a copy run from source have no uninstaller.
+    /// True only for an installation owned by the per-user tar installer.
     /// </summary>
-    public static bool IsInstalled { get; } =
-        OperatingSystem.IsWindows() && IsInstalledIn(AppContext.BaseDirectory)
-        || OperatingSystem.IsLinux() && IsLinuxInstalled(AppContext.BaseDirectory);
+    public static bool IsInstalled { get; } = IsLinuxInstalled(AppContext.BaseDirectory);
 
-    internal static bool IsInstalledIn(string folder) =>
-        File.Exists(Path.Combine(folder, "uninstall.exe")) || File.Exists(Path.Combine(folder, "unins000.exe"));
+    /// <summary>Package recipes mark DEB, RPM or Arch builds at publish time.</summary>
+    public static string? PackageKind { get; } =
+        typeof(UpdateService).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "WayFileePackageKind")?.Value;
+
+    public static LinuxUpdateChannel InstallChannel => GetInstallChannel(IsInstalled, PackageKind);
+
+    internal static LinuxUpdateChannel GetInstallChannel(bool userInstall, string? packageKind) =>
+        packageKind is "deb" or "rpm" or "arch" ? LinuxUpdateChannel.SystemPackage
+        : userInstall ? LinuxUpdateChannel.UserInstall
+        : LinuxUpdateChannel.Portable;
 
     internal static bool IsLinuxInstalled(string baseDirectory)
     {
-        var marker = Path.Combine(baseDirectory, ".filee-package");
+        var marker = Path.Combine(baseDirectory, ".wayfilee-package");
         try
         {
-            return File.Exists(marker) && File.ReadAllText(marker).Trim() == "com.filee.app";
+            return File.Exists(marker) && File.ReadAllText(marker).Trim() == "com.wayfilee.app";
         }
         catch (Exception)
         {
@@ -131,8 +130,6 @@ public sealed partial class UpdateService : ObservableObject
 
     private static string DefaultTargetPlatform()
     {
-        if (OperatingSystem.IsWindows())
-            return "win";
         if (OperatingSystem.IsLinux())
         {
             try
@@ -162,17 +159,14 @@ public sealed partial class UpdateService : ObservableObject
     /// <summary>The log file path recorded in the update failure marker from the previous run, if any.</summary>
     internal string? LastFailureLogPath { get; private set; }
 
-    /// <summary>Whether <see cref="UpdateAsync"/> installs by itself (<see cref="IsInstalled"/>; tests set it).</summary>
+    /// <summary>Whether <see cref="UpdateAsync"/> runs the per-user installer (tests can override).</summary>
     internal bool InstallsItself { get; init; } = IsInstalled;
 
-    /// <summary>
-    /// Who signed a program, if Windows trusts the signature (<see cref="Authenticode.TrustedSigner"/>; the flag also
-    /// checks revocation). Tests replace it.
-    /// </summary>
-    internal Func<string, bool, string?> SignerOf { get; init; } = Authenticode.TrustedSigner;
+    /// <summary>Whether the installed files belong to a distro package (tests can override).</summary>
+    internal bool UsesSystemPackageManager { get; init; } = InstallChannel == LinuxUpdateChannel.SystemPackage;
 
-    /// <summary>This copy of Filee, whose publisher must have signed the installer too (tests set it).</summary>
-    internal string? OwnProgram { get; init; } = Environment.ProcessPath;
+    /// <summary>Package flavor of this build (tests can override without publishing an assembly).</summary>
+    internal string? PackageKindForUpdate { get; init; } = PackageKind;
 
     /// <summary>The newer version found by the last check (e.g. "1.0.2"), or null when up to date / unknown.</summary>
     [ObservableProperty]
@@ -206,8 +200,8 @@ public sealed partial class UpdateService : ObservableObject
     public event EventHandler<string>? UpdateFound;
 
     /// <summary>
-    /// True for published builds (the installer and the portable zip are published with <c>-p:FileeRelease=true</c>),
-    /// false when running from source. Keeps development builds out of the registry.
+    /// True for published builds (the Linux archives are published with <c>-p:FileeRelease=true</c>),
+    /// false when running from source.
     /// </summary>
     public static bool IsReleaseBuild =>
         typeof(UpdateService).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -242,7 +236,7 @@ public sealed partial class UpdateService : ObservableObject
             var tag = json.RootElement.TryGetProperty("tag_name", out var value) ? value.GetString() : null;
             var newer = IsNewer(tag, CurrentVersion) ? Normalize(tag!) : null;
             (_installer, _checksums) = TargetPlatform != "unsupported"
-                ? FindFiles(json.RootElement, TargetPlatform)
+                ? FindFiles(json.RootElement, TargetPlatform, UsesSystemPackageManager ? PackageKindForUpdate : null)
                 : (null, null);
             IReadOnlyList<ReleaseNote> notes = [];
             if (newer is not null)
@@ -315,14 +309,19 @@ public sealed partial class UpdateService : ObservableObject
     }
 
     /// <summary>
-    /// What every "Update" button does. An installed copy downloads, verifies and runs the new installer; anything
-    /// else (portable, run from source, the release has no installer) opens a download page. Safe to call twice.
+    /// What every "Update" button does. Per-user installs update from a verified archive. Package builds download
+    /// a verified release package and ask the system package manager to install it. Portable copies open Releases.
     /// </summary>
     public async Task UpdateAsync()
     {
         if (IsBusy)
             return;
-        if (!InstallsItself)
+        if (UsesSystemPackageManager && PackageKindForUpdate is not ("deb" or "rpm" or "arch"))
+        {
+            Fail("package", new InvalidOperationException("This package build has no recognized update format"));
+            return;
+        }
+        if (!InstallsItself && !UsesSystemPackageManager)
         {
             OpenDownloadPage();
             return;
@@ -343,53 +342,6 @@ public sealed partial class UpdateService : ObservableObject
             return;
         }
 
-        if (TargetPlatform == "win")
-        {
-            var folder = Path.Combine(Path.GetTempPath(), "Filee-update");
-            string installer;
-            try
-            {
-                var progress = new Progress<int>(percent => DownloadPercent = percent);
-                installer = await DownloadInstallerAsync(folder, progress);
-                // WinVerifyTrust hashes the whole installer and may ask the certificate authority about revocation.
-                await Task.Run(() => CheckPublisher(installer));
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException
-                                           or InvalidDataException or UnauthorizedAccessException)
-            {
-                Fail("download", ex);
-                return;
-            }
-
-            Process? setup;
-            try
-            {
-                setup = StartProcess(new ProcessStartInfo(installer, InstallerArguments) { UseShellExecute = true });
-            }
-            catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
-            {
-                _log.LogInformation("Update cancelled at the administrator prompt");
-                Step = UpdateStep.Cancelled;
-                return;
-            }
-            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-            {
-                Fail("start", ex);
-                return;
-            }
-
-            _log.LogInformation("Started the installer for {Version}", LatestVersion);
-            Step = UpdateStep.Installing;
-            if (setup is null)
-                return;
-
-            using (setup)
-                await setup.WaitForExitAsync();
-            _log.LogInformation("Installer ended with exit code {Code}", setup.ExitCode);
-            Step = setup.ExitCode == 0 ? UpdateStep.Idle : UpdateStep.Cancelled;
-            return;
-        }
-
         if (TargetPlatform.StartsWith("linux-", StringComparison.OrdinalIgnoreCase))
         {
             string? workspace = null;
@@ -405,6 +357,12 @@ public sealed partial class UpdateService : ObservableObject
             {
                 DeleteSecureWorkspace(workspace);
                 Fail("download", ex);
+                return;
+            }
+
+            if (UsesSystemPackageManager)
+            {
+                StartLinuxPackageUpdate(installer, workspace);
                 return;
             }
 
@@ -477,7 +435,63 @@ public sealed partial class UpdateService : ObservableObject
             return;
         }
 
-        throw new PlatformNotSupportedException("In-app update is only supported on Windows and Linux");
+        throw new PlatformNotSupportedException("In-app update is only supported on Linux");
+    }
+
+    /// <summary>After this process exits, ask the system package manager to install the verified release asset.</summary>
+    internal void StartLinuxPackageUpdate(string packagePath, string workspace)
+    {
+        var manager = PackageKindForUpdate switch
+        {
+            "rpm" => "dnf",
+            "deb" => "apt",
+            "arch" => "pacman",
+            _ => null,
+        };
+        if (manager is null)
+        {
+            DeleteSecureWorkspace(workspace);
+            Fail("package", new InvalidOperationException("Unknown package format"));
+            return;
+        }
+        var logDir = Path.Combine(UserDataStore.DefaultDirectory, "logs");
+        Directory.CreateDirectory(logDir);
+        var logFile = Path.Combine(logDir, $"filee-{DateTime.Now:yyyyMMdd}.log");
+        var markerFile = FailureMarkerPathOverride ?? Path.Combine(UserDataStore.DefaultDirectory, ".update-failed");
+        try
+        {
+            var startInfo = new ProcessStartInfo("/bin/sh") { UseShellExecute = false };
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add(
+                "for _ in $(seq 1 600); do if ! kill -0 \"$1\" 2>/dev/null; then break; fi; sleep 0.1; done; " +
+                "if kill -0 \"$1\" 2>/dev/null; then echo 'Package update aborted: app did not exit' >> \"$4\"; exit 1; fi; " +
+                "case \"$2\" in " +
+                "dnf) pkexec dnf install -y \"$3\" >> \"$4\" 2>&1 ;; " +
+                "apt) pkexec apt install -y \"$3\" >> \"$4\" 2>&1 ;; " +
+                "pacman) pkexec pacman -U --noconfirm \"$3\" >> \"$4\" 2>&1 ;; " +
+                "esac; status=$?; rm -rf \"$5\" 2>/dev/null; " +
+                "if [ $status -eq 0 ]; then exec \"$7\" --background --whats-new; " +
+                "else echo \"Package update failed with status $status\" >> \"$4\"; " +
+                "echo \"$4\" > \"$6.tmp\" 2>/dev/null && mv -f \"$6.tmp\" \"$6\" 2>/dev/null || true; " +
+                "exec \"$7\" --background; fi");
+            startInfo.ArgumentList.Add("_");
+            startInfo.ArgumentList.Add(Environment.ProcessId.ToString());
+            startInfo.ArgumentList.Add(manager);
+            startInfo.ArgumentList.Add(packagePath);
+            startInfo.ArgumentList.Add(logFile);
+            startInfo.ArgumentList.Add(workspace);
+            startInfo.ArgumentList.Add(markerFile);
+            startInfo.ArgumentList.Add("/opt/wayfilee/Filee");
+            StartProcess(startInfo);
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            DeleteSecureWorkspace(workspace);
+            Fail("package", ex);
+            return;
+        }
+        Step = UpdateStep.Installing;
+        RequestApplicationShutdown?.Invoke();
     }
 
     /// <summary>
@@ -519,33 +533,6 @@ public sealed partial class UpdateService : ObservableObject
         return target;
     }
 
-    /// <summary>
-    /// Throws <see cref="InvalidDataException"/> (and deletes the installer) unless the publisher that signed this copy
-    /// of Filee signed <paramref name="installer"/> as well. The checksum file sits on the same release as the
-    /// installer, so it can't tell a replaced installer from the real one; the signature can. A copy that is not
-    /// signed itself (built from source) has no publisher to compare with and keeps to the checksum.
-    /// </summary>
-    internal void CheckPublisher(string installer)
-    {
-        var publisher = OwnProgram is null ? null : SignerOf(OwnProgram, false);
-        if (publisher is null)
-        {
-            _log.LogInformation("This copy of Filee is not signed: the installer is checked by its SHA-256 only");
-            return;
-        }
-        var signer = SignerOf(installer, true);
-        if (signer == publisher)
-            return;
-        // A signature that holds without the revocation check failed only that check: the certificate authority
-        // could not be reached (offline, a proxy or a firewall) or the certificate was revoked.
-        var reason = signer is null && SignerOf(installer, false) == publisher
-            ? $"is signed by {publisher}, but the revocation check failed (the certificate authority could not be " +
-              "reached, or the certificate was revoked)"
-            : $"is signed by {signer ?? "no publisher Windows trusts"}, not by {publisher}";
-        TryDelete(installer);
-        throw new InvalidDataException($"{Path.GetFileName(installer)} {reason}");
-    }
-
     private async Task DownloadAsync(ReleaseFile file, string path, IProgress<int>? progress, CancellationToken cancellationToken)
     {
         using var stall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -584,10 +571,10 @@ public sealed partial class UpdateService : ObservableObject
         return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
-    /// <summary>Opens a download page: the website for installed copies, the release page (portable zip) otherwise.</summary>
+    /// <summary>Opens the release page for a manual archive or package download.</summary>
     public void OpenDownloadPage()
     {
-        var url = IsInstalled ? WebsiteUrl : LatestReleaseUrl;
+        var url = LatestReleaseUrl;
         try
         {
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
@@ -674,17 +661,25 @@ public sealed partial class UpdateService : ObservableObject
     /// <summary>A file attached to a release.</summary>
     internal sealed record ReleaseFile(string Name, string Url, long Size);
 
-    /// <summary>Picks the installer/archive and checksum file matching the target platform from a GitHub release (null when missing).</summary>
-    internal static (ReleaseFile? Installer, ReleaseFile? Checksums) FindFiles(JsonElement release, string? target = "win")
+    /// <summary>Picks the archive or distro package and checksum for the target platform from a GitHub release.</summary>
+    internal static (ReleaseFile? Installer, ReleaseFile? Checksums) FindFiles(JsonElement release, string? target = null, string? packageKind = null)
     {
-        target ??= "win";
+        target ??= GetLinuxRid();
         ReleaseFile? installer = null, checksums = null;
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
             return (null, null);
 
-        var isLinux = target.StartsWith("linux-", StringComparison.OrdinalIgnoreCase);
-        var expectedInstallerSuffix = isLinux ? $"-{target}.tar.gz" : "-win-Setup.exe";
-        var expectedChecksumsSuffix = isLinux ? $"-{target}-SHA256SUMS.txt" : "-SHA256SUMS.txt";
+        var extension = packageKind switch
+        {
+            "rpm" => "rpm",
+            "deb" => "deb",
+            "arch" => "pkg.tar.zst",
+            _ => "tar.gz",
+        };
+        var expectedInstallerSuffix = $"-{target}.{extension}";
+        var expectedChecksumsSuffix = packageKind is "rpm" or "deb" or "arch"
+            ? $"-{target}-{packageKind}-SHA256SUMS.txt"
+            : $"-{target}-SHA256SUMS.txt";
 
         foreach (var asset in assets.EnumerateArray())
         {
@@ -700,10 +695,6 @@ public sealed partial class UpdateService : ObservableObject
             }
             else if (name.EndsWith(expectedChecksumsSuffix, StringComparison.OrdinalIgnoreCase))
             {
-                // When targeting Windows, exclude platform-specific checksum files (e.g. -linux-x64-SHA256SUMS.txt, -osx-...)
-                if (!isLinux && (name.Contains("-linux-", StringComparison.OrdinalIgnoreCase) || name.Contains("-osx-", StringComparison.OrdinalIgnoreCase)))
-                    continue;
-
                 checksums = new ReleaseFile(name, url, size);
             }
         }
@@ -988,7 +979,7 @@ public sealed partial class UpdateService : ObservableObject
             var root = !string.IsNullOrWhiteSpace(dataHome)
                 ? dataHome
                 : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return Path.Combine(root, "filee");
+            return Path.Combine(root, "wayfilee");
         }
         return Path.GetTempPath();
     }
@@ -1169,7 +1160,7 @@ public sealed partial class UpdateService : ObservableObject
         var root = !string.IsNullOrWhiteSpace(dataHome)
             ? dataHome
             : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(root, "filee", "application");
+        return Path.Combine(root, "wayfilee", "application");
     }
 
     /// <summary>True when release tag <paramref name="tag"/> ("v1.2.0") is a higher version than <paramref name="current"/>.</summary>

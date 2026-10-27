@@ -120,6 +120,8 @@ public sealed partial class ToolbarPageViewModel : ObservableObject, IDisposable
         OuterRadius = store.Settings.Donut.OuterRadius;
         HoleRatio = store.Settings.Donut.HoleRatio * 100;
         SliceOpacity = Math.Clamp(store.Settings.Donut.Opacity, DonutSettings.MinOpacity, 1) * 100;
+        AnimationSpeedIndex = Enum.IsDefined(store.Settings.Donut.AnimationSpeed)
+            ? (int)store.Settings.Donut.AnimationSpeed : (int)DonutAnimationSpeed.Normal;
         _loading = false;
 
         SelectedProfile = Profiles.FirstOrDefault();
@@ -284,6 +286,7 @@ public sealed partial class ToolbarPageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _outerRadius;
     [ObservableProperty] private double _holeRatio;
     [ObservableProperty] private double _sliceOpacity;
+    [ObservableProperty] private int _animationSpeedIndex;
 
     private ToolbarProfile? Profile => SelectedProfile?.Profile;
 
@@ -390,6 +393,7 @@ public sealed partial class ToolbarPageViewModel : ObservableObject, IDisposable
     partial void OnOuterRadiusChanged(double value) => SaveAppearance();
     partial void OnHoleRatioChanged(double value) => SaveAppearance();
     partial void OnSliceOpacityChanged(double value) => SaveAppearance();
+    partial void OnAnimationSpeedIndexChanged(int value) => SaveAppearance();
 
     private void SaveAppearance()
     {
@@ -398,6 +402,8 @@ public sealed partial class ToolbarPageViewModel : ObservableObject, IDisposable
         _store.Settings.Donut.OuterRadius = Math.Round(OuterRadius);
         _store.Settings.Donut.HoleRatio = Math.Round(HoleRatio) / 100;
         _store.Settings.Donut.Opacity = Math.Round(SliceOpacity) / 100;
+        _store.Settings.Donut.AnimationSpeed = Enum.IsDefined(typeof(DonutAnimationSpeed), AnimationSpeedIndex)
+            ? (DonutAnimationSpeed)AnimationSpeedIndex : DonutAnimationSpeed.Normal;
         _store.SaveSettings();
     }
 

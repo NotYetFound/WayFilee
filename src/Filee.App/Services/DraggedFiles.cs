@@ -7,7 +7,6 @@ using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Filee.Core.Platform;
 using Filee.Core.Web;
-using Filee.Platform.MacOS;
 
 namespace Filee.App.Services;
 
@@ -26,7 +25,7 @@ internal static class DraggedFiles
     /// page).
     /// </summary>
     public static bool Offered(IDataTransfer data) =>
-        data.Contains(DataFormat.File) || data.Items.Any(item => item.Formats.Any(IsFilenames)) || BrowserDrags.MayOffer(data);
+        data.Contains(DataFormat.File) || BrowserDrags.MayOffer(data);
 
     /// <summary>
     /// The files in a drag: from a browser when it brought some (as placeholders, see <see cref="BrowserDrags"/>),
@@ -58,7 +57,7 @@ internal static class DraggedFiles
                 .Distinct(FileSystemPaths.Comparer).ToList();
 
         var files = Usable((data.TryGetFiles() ?? []).Select(item => item.TryGetLocalPath()).OfType<string>().ToList());
-        return files.Count > 0 ? files : Usable(Filenames(data).ToList());
+        return files;
     }
 
     /// <summary>Whether <paramref name="path"/> is a drive or the file system root ("C:\", "/").</summary>
@@ -69,14 +68,4 @@ internal static class DraggedFiles
     public static string Describe(IDataTransfer data) =>
         data.Formats.Count == 0 ? "nothing" : string.Join(", ", data.Formats.Select(format => format.Identifier).Distinct());
 
-    private static IEnumerable<string> Filenames(IDataTransfer data) =>
-        data.Items.SelectMany(item => item.Formats.Where(IsFilenames).SelectMany(format => item.TryGetRaw(format) switch
-        {
-            byte[] bytes => PasteboardPaths.FromPropertyList(bytes),
-            string text => PasteboardPaths.FromPropertyList(text),
-            _ => [],
-        }));
-
-    private static bool IsFilenames(DataFormat format) =>
-        format.Kind == DataFormatKind.Platform && PasteboardPaths.IsFilenamesType(format.Identifier);
 }

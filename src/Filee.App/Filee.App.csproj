@@ -3,45 +3,32 @@
 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <AssemblyName>Filee</AssemblyName>
+    <AssemblyTitle>WayFilee</AssemblyTitle>
     <RootNamespace>Filee.App</RootNamespace>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\Icons\filee.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Filee.Core\Filee.Core.csproj" />
     <ProjectReference Include="..\Filee.Engines\Filee.Engines.csproj" />
-    <ProjectReference Include="..\Filee.Platform.Windows\Filee.Platform.Windows.csproj" />
     <ProjectReference Include="..\Filee.Platform.Linux\Filee.Platform.Linux.csproj" />
-    <ProjectReference Include="..\Filee.Platform.MacOS\Filee.Platform.MacOS.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" />
-    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Skia" />
+    <PackageReference Include="Avalonia.HarfBuzz" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Controls.ColorPicker" />
-    <PackageReference Include="AvaloniaUI.DiagnosticsSupport">
-      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
-      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
-    </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="SharpHook" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <FileeNativeWayland Condition="$(RuntimeIdentifier.StartsWith('linux')) Or ('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Linux')))">true</FileeNativeWayland>
-    <DefineConstants Condition="'$(FileeNativeWayland)' == 'true'">$(DefineConstants);FILEE_NATIVE_WAYLAND</DefineConstants>
-  </PropertyGroup>
-
-  <!-- Linux-only Wayland packages to keep Windows and macOS binaries small -->
-  <ItemGroup Condition="'$(FileeNativeWayland)' == 'true'">
+  <ItemGroup>
     <PackageReference Include="Avalonia.Wayland" />
   </ItemGroup>
 
@@ -69,11 +56,16 @@
       <_Parameter1>RepositoryUrl</_Parameter1>
       <_Parameter2>$(FileeRepositoryUrl)</_Parameter2>
     </AssemblyAttribute>
-    <!-- Published builds (installer, portable zip) set -p:FileeRelease=true: only they register Explorer and startup
-         entries (UpdateService.IsReleaseBuild), so running from source leaves the user's system alone. -->
+    <!-- Published Linux archives and packages set -p:FileeRelease=true; source builds do not. -->
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(FileeRelease)' == 'true'">
       <_Parameter1>FileeRelease</_Parameter1>
       <_Parameter2>true</_Parameter2>
+    </AssemblyAttribute>
+    <!-- Distro package recipes set -p:WayFileePackageKind=deb|rpm|arch. The updater then
+         delegates to the package manager instead of running the per-user tar installer. -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute" Condition="'$(WayFileePackageKind)' == 'deb' Or '$(WayFileePackageKind)' == 'rpm' Or '$(WayFileePackageKind)' == 'arch'">
+      <_Parameter1>WayFileePackageKind</_Parameter1>
+      <_Parameter2>$(WayFileePackageKind)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 </Project>

@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Id": "wayfilee-donut",
+        "Name": "WayFilee donut at the cursor",
+        "Description": "Moves WayFilee's donut window to the cursor on KDE Wayland.",
+        "License": "MIT",
+        "EnabledByDefault": true,
+        "Version": "1.1"
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js",
+    "KPackageStructure": "KWin/Script"
+}

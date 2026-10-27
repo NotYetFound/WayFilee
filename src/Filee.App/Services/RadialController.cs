@@ -190,10 +190,10 @@ public sealed class RadialController(
             window.DonutControl.PlayCloseAnimation(() =>
             {
                 if (!_visible)
-                    window.Hide();
+                    HideOrClose(window);
             });
         else
-            window.Hide();
+            HideOrClose(window);
         OfferFormatRequest();
     }
 
@@ -220,14 +220,17 @@ public sealed class RadialController(
         var window = new RadialWindow { DataContext = viewModel };
         var donut = window.DonutControl;
 
-        // On native Wayland, hiding an xdg_toplevel surface causes the compositor to destroy its surface,
-        // and re-showing raises an InvalidOperationException. Track Closed to re-create on the next gesture.
+        // Native Wayland closes the toplevel when dismissed. Re-create it for the next gesture.
         if (Filee.Platform.Linux.WaylandSupport.NativeWaylandRequested)
         {
             window.Closed += (_, _) =>
             {
                 if (ReferenceEquals(_window, window))
+                {
                     _window = null;
+                    _visible = false;
+                    WatchFlipKey();
+                }
             };
         }
 
@@ -281,7 +284,7 @@ public sealed class RadialController(
                 });
                 return;
             }
-            Close();
+            Close(animate: false);
         };
 
         donut.ActiveIndexChanged += (_, index) => viewModel.ShowHint(index, donut.ActiveSubIndex, donut.IsCenterHot);
@@ -496,8 +499,21 @@ public sealed class RadialController(
     {
         _visible = false;
         WatchFlipKey();
-        _window?.DonutControl.CollapseGroup();
-        _window?.Hide();
+        if (_window is { } window)
+        {
+            window.DonutControl.CollapseGroup();
+            HideOrClose(window);
+        }
+    }
+
+    private static void HideOrClose(RadialWindow window)
+    {
+        // A hidden xdg_toplevel can leave a compositor entry behind and cannot be
+        // reliably remapped. Create a fresh Wayland toplevel on the next opening.
+        if (Filee.Platform.Linux.WaylandSupport.NativeWaylandRequested)
+            window.Close();
+        else
+            window.Hide();
     }
 
     /// <summary>Edits the preset of slice <paramref name="index"/>, or of slice <paramref name="sub"/> of its group's ring.</summary>
@@ -556,7 +572,7 @@ public sealed class RadialController(
     {
         var cursor = new PixelPoint(x, y);
         var screen = window.Screens.ScreenFromPoint(cursor) ?? window.Screens.Primary;
-        var scaling = OperatingSystem.IsMacOS() ? 1 : screen?.Scaling ?? 1;
+        var scaling = screen?.Scaling ?? 1;
 
         // Window size follows the donut size (SizeToContent); compute it up front to centre on the cursor.
         var side = DonutMenu.SideFor(viewModel.OuterRadius, viewModel.ReserveSubRing);
@@ -564,6 +580,7 @@ public sealed class RadialController(
         var position = WindowPosition(cursor, screen?.WorkingArea, sidePx);
 
         Motion.Refresh();
+        window.ShowActivated = activate;
         window.Position = position;
         if (!window.IsVisible)
             window.Show();
@@ -574,11 +591,6 @@ public sealed class RadialController(
         if (window.TryGetPlatformHandle()?.Handle is { } handle)
         {
             platform.RaiseTopmost(handle);
-            if (!_fileDragsAccepted && OperatingSystem.IsMacOS() && platform is Filee.Platform.MacOS.MacOSPlatformServices mac)
-            {
-                mac.AcceptFileDrags(handle);
-                _fileDragsAccepted = true;
-            }
         }
         _visible = true;
         if (activate)

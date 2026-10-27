@@ -77,5 +77,5 @@ public sealed partial class ElevationService : ObservableObject
     }
 
     private static string? RelaunchThroughShell(string executable) =>
-        Filee.Platform.Windows.Elevation.RelaunchThroughShell(executable, "", out var error) ? null : error ?? "unknown error";
+        "Administrator relaunch is unavailable on Linux.";
 }

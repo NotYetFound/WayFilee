@@ -1,7 +1,7 @@
 <!--
   Borderless, transparent, always-on-top window that hosts the live donut toolbar at the cursor.
-  It is created once and reused (shown/hidden) so it appears instantly.
-  ShowActivated=False: during a file drag it must not steal focus from Explorer, or the drag would break.
+  On native Wayland it closes when dismissed and is recreated for the next gesture.
+  Drag gestures show it without activation; click mode activates it so loss of focus dismisses the donut.
 -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -9,10 +9,11 @@
         xmlns:vm="using:Filee.App.ViewModels"
         x:Class="Filee.App.Views.RadialWindow"
         x:DataType="vm:RadialViewModel"
-        Title="Filee Donut"
+        Title="WayFilee Donut"
         WindowDecorations="None"
         Background="Transparent"
         TransparencyLevelHint="Transparent"
+        TransparencyBackgroundFallback="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
         ShowActivated="False"
@@ -47,6 +48,7 @@
                  OuterRadius="{Binding OuterRadius}"
                  HoleRatio="{Binding HoleRatio}"
                  SliceOpacity="{Binding SliceOpacity}"
+                 AnimationSpeed="{Binding AnimationSpeed}"
                  ReserveSubRing="{Binding ReserveSubRing}"
                  CanFlip="{Binding CanFlip}"
                  CenterHint="{Binding FlipHint}"

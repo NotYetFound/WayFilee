@@ -13,6 +13,7 @@ using Avalonia.Media;
 using Filee.App.Services;
 using Filee.Core.Platform;
 using Filee.Core.Settings;
+using Filee.Platform.Linux;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -49,9 +50,8 @@ internal static class Program
     {
         Options = CommandLine.Parse(args);
         PreloadedStore = null;
-        Log = StartupDiagnostics.CreateEarlyLogger(Path.Combine(UserDataStore.DefaultDirectory, "logs"), out var earlyStoreLogger);
+        Log = StartupDiagnostics.CreateEarlyLogger(Path.Combine(UserDataStore.DefaultDirectory, "logs"), out _);
         StartupDiagnostics.LogUnhandledExceptions(Log);
-        Elevation = Filee.Platform.Windows.Elevation.Probe();
         var startup = StartupDiagnostics.Describe(UpdateService.CurrentVersion, Environment.ProcessPath,
             StartupDiagnostics.InstallKind(UpdateService.IsInstalled, UpdateService.IsReleaseBuild), Elevation,
             StartupDiagnostics.OperatingSystemText(), args.Length);
@@ -68,8 +68,6 @@ internal static class Program
             // was caught, Filee ended here without a word (Explorer's menu showed a busy cursor, then nothing).
             Log.LogWarning("{Startup}", startup);
             Log.LogWarning(ex, "Another Filee is running with administrator rights; this launch can't reach it");
-            if (!installerCommand)
-                TellUserOnce("startup.elevated_other");
             return 1;
         }
         Instance = instance;
@@ -86,34 +84,23 @@ internal static class Program
                 // Logged only when it failed: Explorer starts one Filee per selected file.
                 Log.LogWarning("{Startup}", startup);
                 Log.LogWarning("Could not hand {Count} argument(s) to the running Filee: {Result}", args.Length, result);
-                TellUserOnce(result == ForwardResult.AccessDenied ? "startup.elevated_other" : "startup.no_answer");
             }
             ReleaseInstance();
             return result == ForwardResult.Delivered ? 0 : 1;
         }
 
         Log.LogInformation("{Startup}", startup);
-        if (Elevation.ShellCannotReachFilee)
-            Log.LogWarning("Filee runs as administrator ({Elevation}) while Explorer doesn't: Explorer can't drop files on it, " +
-                           "use its menu or have its selection read", Elevation);
-
         try
         {
-            if (OperatingSystem.IsMacOS())
+            if (!WaylandSupport.NativeWaylandRequested ||
+                !WaylandSupport.IsSupportedCompositor(Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP")))
             {
-                PreloadedStore = new UserDataStore(UserDataStore.DefaultDirectory, earlyStoreLogger);
-                PreloadedStore.Load();
+                const string message = "WayFilee requires a KDE Plasma Wayland session.";
+                Log.LogError("{Message}", message);
+                Console.Error.WriteLine(message);
+                return 1;
             }
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args, ShutdownMode.OnExplicitShutdown);
-        }
-        catch (InvalidOperationException ex) when (OperatingSystem.IsMacOS() && ex.Message.Contains("RenderTimer", StringComparison.Ordinal))
-        {
-            // The window system has no display link for this screen: a Mac in a virtual machine without graphics
-            // acceleration (VMware). Avalonia can't draw there; say so instead of quitting without a word.
-            StartupFailure.Report(ex, "Filee can't open its window on this Mac: macOS reports no display it can draw on. " +
-                                      "This happens in virtual machines without graphics acceleration (such as VMware). " +
-                                      "The filee command still works in Terminal.");
-            return 1;
         }
         finally
         {
@@ -149,34 +136,6 @@ internal static class Program
         catch (UnauthorizedAccessException ex)
         {
             Log.LogWarning(ex, "Could not take the single-instance lock back");
-        }
-    }
-
-    /// <summary>
-    /// Shows a launch problem in a system message box (Filee's own windows aren't available in this process). Explorer
-    /// starts one Filee per selected file: a lock shared between them lets only the first one show it.
-    /// </summary>
-    private static void TellUserOnce(string key)
-    {
-        if (!OperatingSystem.IsWindows())
-            return;
-        try
-        {
-            using var shown = new Mutex(initiallyOwned: true, @"Local\" + SingleInstance.DefaultName + "-notice", out var createdNew);
-            if (!createdNew)
-                return;
-            try
-            {
-                Filee.Platform.Windows.Elevation.ShowWarning(LocalizationService.EarlyText(key));
-            }
-            finally
-            {
-                shown.ReleaseMutex();
-            }
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
-        {
-            Log.LogWarning(ex, "Could not show the launch problem");
         }
     }
 
@@ -275,30 +234,43 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
     {
         var builder = AppBuilder.Configure<App>();
-#if FILEE_NATIVE_WAYLAND
-        // The native backend is only compiled into Linux builds and only used when asked for (FILEE_USE_WAYLAND=1).
-        builder = Filee.Platform.Linux.WaylandSupport.NativeWaylandRequested ? builder.UseWayland() : builder.UsePlatformDetect();
-#else
-        builder = builder.UsePlatformDetect();
-#endif
-
-        if (OperatingSystem.IsMacOS())
-            builder = builder.With(new MacOSPlatformOptions { ShowInDock = PreloadedStore?.Settings.ShowInDock ?? true });
-        if (OperatingSystem.IsWindows())
-            builder = builder.With(WindowsRendering.Options(
-                WindowsRendering.Normalize(Environment.GetEnvironmentVariable(WindowsRendering.Variable)),
-                adapters => Log.LogInformation("Graphics adapters: {Adapters}", adapters)));
+        // This fork targets KDE Wayland. Never silently start through XWayland.
+        // KWin's server decorations appear after mapping and can delay the donut.
+        // This experimental backend option keeps borderless windows borderless at creation.
+#pragma warning disable AVALONIA_WAYLAND_FORCE_CSD
+        builder = builder.UseWayland()
+            .With(new WaylandPlatformOptions
+            {
+                // KWin resolves taskbar icons by matching xdg_toplevel.app_id to
+                // the installed com.wayfilee.app.desktop launcher filename.
+                AppId = "com.wayfilee.app",
+                ForceDrawnDecorations = true,
+            })
+            .UseSkia().UseHarfBuzz();
+#pragma warning restore AVALONIA_WAYLAND_FORCE_CSD
 
         builder = builder
+            .With(FontOptions())
             .ConfigureFonts(fonts => fonts.AddFontCollection(new FileeFontCollection()))
-#if DEBUG
-            .WithDeveloperTools()
-#endif
             .LogToTrace();
 
         AvaloniaLogForwarder.Install(Log);
         return builder;
     }
+
+    internal static FontManagerOptions FontOptions() => new()
+    {
+        // Noto Sans does not include arrows. Use the system symbol face for those
+        // characters instead of drawing missing-glyph rectangles in labels.
+        FontFallbacks =
+        [
+            new FontFallback
+            {
+                FontFamily = new FontFamily("DejaVu Sans"),
+                UnicodeRange = UnicodeRange.Parse("U+2190-21FF"),
+            },
+        ],
+    };
 }
 
 /// <summary>Embedded Noto fonts: <c>fonts:Filee#Noto Sans</c>, <c>#Noto Sans JP</c>, <c>#Noto Sans KR</c>,

@@ -8,6 +8,7 @@ Releases/
 # Downloaded conversion engines (see build/fetch-engines.ps1)
 engines/
 build/.cache/
+design/wayfilee-icon/tmp/
 
 # IDE
 .vs/
