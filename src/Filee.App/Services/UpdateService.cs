@@ -49,7 +49,6 @@ public sealed partial class UpdateService : ObservableObject
     private readonly HttpClient _http;
     private DispatcherTimer? _timer;
     private ReleaseFile? _installer;
-    private ReleaseFile? _checksums;
 
     public UpdateService(ILogger<UpdateService> log) : this(log, new HttpClientHandler())
     {
@@ -235,9 +234,9 @@ public sealed partial class UpdateService : ObservableObject
             using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
             var tag = json.RootElement.TryGetProperty("tag_name", out var value) ? value.GetString() : null;
             var newer = IsNewer(tag, CurrentVersion) ? Normalize(tag!) : null;
-            (_installer, _checksums) = TargetPlatform != "unsupported"
+            _installer = TargetPlatform != "unsupported"
                 ? FindFiles(json.RootElement, TargetPlatform, UsesSystemPackageManager ? PackageKindForUpdate : null)
-                : (null, null);
+                : null;
             IReadOnlyList<ReleaseNote> notes = [];
             if (newer is not null)
             {
@@ -336,9 +335,9 @@ public sealed partial class UpdateService : ObservableObject
             Step = UpdateStep.Idle;
             return;
         }
-        if (_installer is null || _checksums is null)
+        if (_installer is null)
         {
-            Fail("release", new InvalidDataException("The latest release has no installer or no checksum file"));
+            Fail("release", new InvalidDataException("The latest release has no matching installer with a SHA-256 digest"));
             return;
         }
 
@@ -496,18 +495,14 @@ public sealed partial class UpdateService : ObservableObject
 
     /// <summary>
     /// Downloads the installer of the latest release into <paramref name="folder"/> and checks its SHA-256 against
-    /// the release's checksum file. Returns the verified file; throws <see cref="InvalidDataException"/> when it does
-    /// not match.
+    /// the digest in GitHub's release asset metadata. Returns the verified file; throws <see cref="InvalidDataException"/>
+    /// when it does not match.
     /// </summary>
     internal async Task<string> DownloadInstallerAsync(string folder, IProgress<int>? progress,
         CancellationToken cancellationToken = default)
     {
         var installer = _installer ?? throw new InvalidOperationException("No installer in the latest release");
-        var checksums = _checksums ?? throw new InvalidOperationException("No checksum file in the latest release");
-
-        var sums = await GetTextAsync(checksums.Url, cancellationToken);
-        var expected = ParseChecksum(sums, installer.Name)
-                       ?? throw new InvalidDataException($"{checksums.Name} has no line for {installer.Name}");
+        var expected = installer.Sha256;
 
         Directory.CreateDirectory(folder);
         var target = Path.Combine(folder, installer.Name);
@@ -560,15 +555,6 @@ public sealed partial class UpdateService : ObservableObject
         }
         if (file.Size > 0 && received != file.Size)
             throw new IOException($"{file.Name}: got {received} of {file.Size} bytes");
-    }
-
-    private async Task<string> GetTextAsync(string url, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Accept.ParseAdd("application/octet-stream");
-        using var response = await _http.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
     /// <summary>Opens the release page for a manual archive or package download.</summary>
@@ -659,15 +645,15 @@ public sealed partial class UpdateService : ObservableObject
     internal ReleaseFile? Installer => _installer;
 
     /// <summary>A file attached to a release.</summary>
-    internal sealed record ReleaseFile(string Name, string Url, long Size);
+    internal sealed record ReleaseFile(string Name, string Url, long Size, string Sha256);
 
-    /// <summary>Picks the archive or distro package and checksum for the target platform from a GitHub release.</summary>
-    internal static (ReleaseFile? Installer, ReleaseFile? Checksums) FindFiles(JsonElement release, string? target = null, string? packageKind = null)
+    /// <summary>Picks an archive or distro package with a valid GitHub SHA-256 digest for the target platform.</summary>
+    internal static ReleaseFile? FindFiles(JsonElement release, string? target = null, string? packageKind = null)
     {
         target ??= GetLinuxRid();
-        ReleaseFile? installer = null, checksums = null;
+        ReleaseFile? installer = null;
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
-            return (null, null);
+            return null;
 
         var extension = packageKind switch
         {
@@ -677,28 +663,29 @@ public sealed partial class UpdateService : ObservableObject
             _ => "tar.gz",
         };
         var expectedInstallerSuffix = $"-{target}.{extension}";
-        var expectedChecksumsSuffix = packageKind is "rpm" or "deb" or "arch"
-            ? $"-{target}-{packageKind}-SHA256SUMS.txt"
-            : $"-{target}-SHA256SUMS.txt";
 
         foreach (var asset in assets.EnumerateArray())
         {
             var name = asset.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
             var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
             var size = asset.TryGetProperty("size", out var s) && s.TryGetInt64(out var bytes) ? bytes : 0;
-            if (name.Length == 0 || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            var digest = asset.TryGetProperty("digest", out var d) && d.ValueKind == JsonValueKind.String
+                ? ParseGitHubDigest(d.GetString()) : null;
+            if (name.Length == 0 || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || digest is null)
                 continue;
 
             if (name.EndsWith(expectedInstallerSuffix, StringComparison.OrdinalIgnoreCase))
-            {
-                installer = new ReleaseFile(name, url, size);
-            }
-            else if (name.EndsWith(expectedChecksumsSuffix, StringComparison.OrdinalIgnoreCase))
-            {
-                checksums = new ReleaseFile(name, url, size);
-            }
+                installer = new ReleaseFile(name, url, size, digest);
         }
-        return (installer, checksums);
+        return installer;
+    }
+
+    internal static string? ParseGitHubDigest(string? digest)
+    {
+        if (digest is null || !digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var hash = digest.AsSpan("sha256:".Length);
+        return hash.Length == 64 && hash.ToString().All(Uri.IsHexDigit) ? hash.ToString().ToLowerInvariant() : null;
     }
 
     private const UnixFileMode RwxMask =
@@ -937,20 +924,8 @@ public sealed partial class UpdateService : ObservableObject
         }
     }
 
-    /// <summary>Finds the hash for <paramref name="fileName"/> in a <c>sha256sum</c>-style file ("hash  name" lines).</summary>
-    internal static string? ParseChecksum(string sums, string fileName)
-    {
-        foreach (var line in sums.Split('\n'))
-        {
-            var parts = line.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 2 && parts[1].Trim().TrimStart('*') == fileName && parts[0].Length == 64)
-                return parts[0].ToLowerInvariant();
-        }
-        return null;
-    }
-
     /// <summary>Lets tests hand in a release without calling GitHub.</summary>
-    internal void UseRelease(ReleaseFile? installer, ReleaseFile? checksums) => (_installer, _checksums) = (installer, checksums);
+    internal void UseRelease(ReleaseFile? installer) => _installer = installer;
 
     private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
     {

@@ -40,8 +40,7 @@ for format in $formats; do
     esac
     name="WayFilee-$version-$rid.$(case "$format" in rpm) echo rpm ;; deb) echo deb ;; arch) echo pkg.tar.zst ;; esac)"
     artifact="$out/$name"
-    sums="$out/WayFilee-$version-$rid-$format-SHA256SUMS.txt"
-    [[ ! -e $artifact && ! -e $sums ]] || { echo "Package or checksum already exists: $name" >&2; exit 1; }
+    [[ ! -e $artifact ]] || { echo "Package already exists: $name" >&2; exit 1; }
 
     stage="$work/$format"
     install_root="$stage/root"
@@ -146,6 +145,5 @@ PKGINFO
             tar --zstd --owner=0 --group=0 --numeric-owner -cf "$artifact" -C "$install_root" .
             ;;
     esac
-    (cd "$out" && sha256sum "$name" > "$(basename "$sums")")
     echo "$artifact"
 done

@@ -46,7 +46,6 @@ jobs:
       - name: Check release assets
         run: |
           cd Releases
-          for sums in *-${{ matrix.rid }}*-SHA256SUMS.txt; do sha256sum -c "$sums"; done
           tar -tzf *-${{ matrix.rid }}.tar.gz | grep -E '/(Filee|filee-cli|install.sh|kwin/wayfilee-donut/metadata.json)$'
           rpm -qpl *-${{ matrix.rid }}.rpm | grep '/opt/wayfilee/Filee$'
           dpkg-deb -c *-${{ matrix.rid }}.deb | grep '/opt/wayfilee/Filee$'

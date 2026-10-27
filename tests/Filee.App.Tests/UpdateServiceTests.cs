@@ -73,20 +73,19 @@ public class UpdateServiceTests
     private const string Base = "https://example.test/v9.9.9/";
 
     [Fact]
-    public void Release_files_are_the_installer_and_the_checksums()
+    public void Release_files_include_the_installer_digest()
     {
+        var hash = new string('a', 64);
         using var release = JsonDocument.Parse($$"""
             {"tag_name": "v9.9.9", "assets": [
-              {"name": "Filee-9.9.9-linux-x64-SHA256SUMS.txt", "size": 189, "browser_download_url": "{{Base}}Filee-9.9.9-linux-x64-SHA256SUMS.txt"},
-              {"name": "Filee-9.9.9-linux-arm64.tar.gz", "size": 5, "browser_download_url": "{{Base}}Filee-9.9.9-linux-arm64.tar.gz"},
-              {"name": "Filee-9.9.9-linux-x64.tar.gz", "size": 1234, "browser_download_url": "{{Base}}Filee-9.9.9-linux-x64.tar.gz"}
+              {"name": "Filee-9.9.9-linux-arm64.tar.gz", "size": 5, "digest": "sha256:{{hash}}", "browser_download_url": "{{Base}}Filee-9.9.9-linux-arm64.tar.gz"},
+              {"name": "Filee-9.9.9-linux-x64.tar.gz", "size": 1234, "digest": "sha256:{{hash}}", "browser_download_url": "{{Base}}Filee-9.9.9-linux-x64.tar.gz"}
             ]}
             """);
 
-        var (installer, checksums) = UpdateService.FindFiles(release.RootElement);
+        var installer = UpdateService.FindFiles(release.RootElement);
 
-        Assert.Equal(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", 1234), installer);
-        Assert.Equal("Filee-9.9.9-linux-x64-SHA256SUMS.txt", checksums?.Name);
+        Assert.Equal(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", 1234, hash), installer);
     }
 
     [Fact]
@@ -94,31 +93,35 @@ public class UpdateServiceTests
     {
         using var empty = JsonDocument.Parse("""{"tag_name": "v9.9.9"}""");
         using var http = JsonDocument.Parse("""
-            {"assets": [{"name": "Filee-9.9.9-linux-x64.tar.gz", "size": 1, "browser_download_url": "http://example.test/a.exe"}]}
+            {"assets": [{"name": "Filee-9.9.9-linux-x64.tar.gz", "size": 1, "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "browser_download_url": "http://example.test/a.exe"}]}
             """);
 
-        Assert.Equal((null, null), UpdateService.FindFiles(empty.RootElement));
-        Assert.Null(UpdateService.FindFiles(http.RootElement).Installer);
+        Assert.Null(UpdateService.FindFiles(empty.RootElement));
+        Assert.Null(UpdateService.FindFiles(http.RootElement));
     }
 
-    [Fact]
-    public void Checksum_lines_are_matched_by_file_name()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("sha256:short")]
+    [InlineData("sha256:gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg")]
+    public void Missing_or_invalid_asset_digest_is_rejected(string? digest)
     {
-        var hash = new string('A', 64);
-        var sums = $"{new string('1', 64)}  Filee-9.9.9-linux-arm64.tar.gz\r\n{hash}  Filee-9.9.9-linux-x64.tar.gz\r\n";
-
-        Assert.Equal(hash.ToLowerInvariant(), UpdateService.ParseChecksum(sums, "Filee-9.9.9-linux-x64.tar.gz"));
-        Assert.Equal(hash.ToLowerInvariant(), UpdateService.ParseChecksum($"{hash} *Filee-9.9.9-linux-x64.tar.gz", "Filee-9.9.9-linux-x64.tar.gz"));
-        Assert.Null(UpdateService.ParseChecksum(sums, "Filee-9.9.8-linux-x64.tar.gz"));
-        Assert.Null(UpdateService.ParseChecksum("tooshort  Filee-9.9.9-linux-x64.tar.gz", "Filee-9.9.9-linux-x64.tar.gz"));
+        using var release = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            assets = new[] { new { name = "Filee-9.9.9-linux-x64.tar.gz", size = 1, digest,
+                browser_download_url = Base + "Filee-9.9.9-linux-x64.tar.gz" } },
+        }));
+        Assert.Null(UpdateService.FindFiles(release.RootElement));
     }
 
     [Fact]
     public async Task Installer_is_downloaded_verified_and_reused()
     {
         var installer = RandomNumberGenerator.GetBytes(300_000);
-        var network = new FakeRelease(installer, Sha256(installer));
-        var updates = Updates(network, installer.Length);
+        var network = new FakeRelease(installer);
+        var updates = Updates(network, installer.Length, Sha256(installer));
         var folder = TempFolder();
         File.WriteAllText(Path.Combine(folder, "Filee-9.9.8-linux-x64.tar.gz"), "an older download");
         var progress = new List<int>();
@@ -137,10 +140,10 @@ public class UpdateServiceTests
     }
 
     [Fact]
-    public async Task Installer_with_the_wrong_checksum_is_thrown_away()
+    public async Task Installer_with_the_wrong_digest_is_thrown_away()
     {
         var installer = RandomNumberGenerator.GetBytes(10_000);
-        var updates = Updates(new FakeRelease(installer, new string('0', 64)), installer.Length);
+        var updates = Updates(new FakeRelease(installer), installer.Length, new string('0', 64));
         var folder = TempFolder();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -153,19 +156,9 @@ public class UpdateServiceTests
     {
         var installer = RandomNumberGenerator.GetBytes(10_000);
         // GitHub said the file is bigger than what arrived.
-        var updates = Updates(new FakeRelease(installer, Sha256(installer)), installer.Length + 500);
+        var updates = Updates(new FakeRelease(installer), installer.Length + 500, Sha256(installer));
 
         await Assert.ThrowsAsync<IOException>(() =>
-            updates.DownloadInstallerAsync(TempFolder(), null, TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task Checksum_file_without_the_installer_fails()
-    {
-        var installer = RandomNumberGenerator.GetBytes(1_000);
-        var updates = Updates(new FakeRelease(installer, Sha256(installer), sumsName: "Filee-9.9.8-linux-x64.tar.gz"), installer.Length);
-
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
             updates.DownloadInstallerAsync(TempFolder(), null, TestContext.Current.CancellationToken));
     }
 
@@ -173,17 +166,16 @@ public class UpdateServiceTests
     public async Task Download_errors_are_reported_as_http_errors()
     {
         var installer = RandomNumberGenerator.GetBytes(1_000);
-        var updates = Updates(new FakeRelease(installer, Sha256(installer), installerStatus: HttpStatusCode.NotFound), installer.Length);
+        var updates = Updates(new FakeRelease(installer, installerStatus: HttpStatusCode.NotFound), installer.Length, Sha256(installer));
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
             updates.DownloadInstallerAsync(TempFolder(), null, TestContext.Current.CancellationToken));
     }
 
-    private static UpdateService Updates(FakeRelease network, long installerSize)
+    private static UpdateService Updates(FakeRelease network, long installerSize, string hash)
     {
         var updates = new UpdateService(NullLogger<UpdateService>.Instance, network);
-        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", installerSize),
-            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64-SHA256SUMS.txt", Base + "Filee-9.9.9-linux-x64-SHA256SUMS.txt", 100));
+        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", installerSize, hash));
         return updates;
     }
 
@@ -202,20 +194,14 @@ public class UpdateServiceTests
         public void Report(int value) => report(value);
     }
 
-    /// <summary>Serves a release's checksum file and installer.</summary>
-    private sealed class FakeRelease(byte[] installer, string hash, string sumsName = "Filee-9.9.9-linux-x64.tar.gz",
-        HttpStatusCode installerStatus = HttpStatusCode.OK) : HttpMessageHandler
+    /// <summary>Serves a release installer.</summary>
+    private sealed class FakeRelease(byte[] installer, HttpStatusCode installerStatus = HttpStatusCode.OK) : HttpMessageHandler
     {
         public int InstallerRequests { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.ToString();
-            if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent($"{new string('1', 64)}  Filee-9.9.9-linux-arm64.tar.gz\n{hash}  {sumsName}\n", Encoding.ASCII),
-                });
             if (url.EndsWith("-linux-x64.tar.gz", StringComparison.Ordinal))
             {
                 InstallerRequests++;
@@ -246,8 +232,7 @@ public class UpdateServiceTests
     {
         // An earlier check found 9.9.9; 9.9.10 came out before Update was pressed.
         var updates = new UpdateService(NullLogger<UpdateService>.Instance, new LatestRelease("v9.9.10")) { TargetPlatform = "linux-x64" };
-        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", 1),
-            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64-SHA256SUMS.txt", Base + "Filee-9.9.9-linux-x64-SHA256SUMS.txt", 1));
+        updates.UseRelease(new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", 1, new string('a', 64)));
         var announced = 0;
         updates.UpdateFound += (_, _) => announced++;
 
@@ -258,7 +243,7 @@ public class UpdateServiceTests
         Assert.Equal(0, announced); // no second notice while updating
     }
 
-    /// <summary>GitHub's "latest release" answer for <paramref name="tag"/>, with its installer and checksums.</summary>
+    /// <summary>GitHub's "latest release" answer for <paramref name="tag"/>, with its installer digest.</summary>
     private sealed class LatestRelease(string tag) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -266,8 +251,7 @@ public class UpdateServiceTests
             var version = tag.TrimStart('v');
             var json = $$"""
                 {"tag_name":"{{tag}}","assets":[
-                  {"name":"Filee-{{version}}-linux-x64.tar.gz","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64.tar.gz","size":1234},
-                  {"name":"Filee-{{version}}-linux-x64-SHA256SUMS.txt","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64-SHA256SUMS.txt","size":100}]}
+                  {"name":"Filee-{{version}}-linux-x64.tar.gz","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64.tar.gz","size":1234,"digest":"sha256:{{new string('a', 64)}}"}]}
                 """;
             return Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/releases/latest", StringComparison.Ordinal)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") }
@@ -353,13 +337,12 @@ public class UpdateServiceTests
     {
         using var release = JsonDocument.Parse($$"""
             {"assets": [
-              {"name": "{{fileName}}", "size": 100, "browser_download_url": "{{Base}}{{fileName}}"},
-              {"name": "WayFilee-9.9.9-linux-x64-{{kind}}-SHA256SUMS.txt", "size": 90, "browser_download_url": "{{Base}}WayFilee-9.9.9-linux-x64-{{kind}}-SHA256SUMS.txt"}
+              {"name": "{{fileName}}", "size": 100, "digest": "sha256:{{new string('b', 64)}}", "browser_download_url": "{{Base}}{{fileName}}"}
             ]}
             """);
-        var (installer, checksums) = UpdateService.FindFiles(release.RootElement, "linux-x64", kind);
+        var installer = UpdateService.FindFiles(release.RootElement, "linux-x64", kind);
         Assert.Equal(fileName, installer?.Name);
-        Assert.EndsWith($"-{kind}-SHA256SUMS.txt", checksums?.Name);
+        Assert.Equal(new string('b', 64), installer?.Sha256);
     }
 
     [AvaloniaFact]
@@ -402,15 +385,9 @@ public class UpdateServiceTests
                 {
                     Content = new StringContent($$"""
                         {"tag_name":"v9.9.9","assets":[
-                          {"name":"WayFilee-9.9.9-linux-x64.rpm","size":{{package.Length}},"browser_download_url":"{{Base}}WayFilee-9.9.9-linux-x64.rpm"},
-                          {"name":"WayFilee-9.9.9-linux-x64-rpm-SHA256SUMS.txt","size":100,"browser_download_url":"{{Base}}WayFilee-9.9.9-linux-x64-rpm-SHA256SUMS.txt"}
+                          {"name":"WayFilee-9.9.9-linux-x64.rpm","size":{{package.Length}},"digest":"sha256:{{hash}}","browser_download_url":"{{Base}}WayFilee-9.9.9-linux-x64.rpm"}
                         ]}
                         """, Encoding.UTF8, "application/json"),
-                });
-            if (path.EndsWith("rpm-SHA256SUMS.txt", StringComparison.Ordinal))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent($"{hash}  WayFilee-9.9.9-linux-x64.rpm\n"),
                 });
             if (path.EndsWith("WayFilee-9.9.9-linux-x64.rpm", StringComparison.Ordinal))
             {
@@ -424,38 +401,34 @@ public class UpdateServiceTests
     [Fact]
     public void FindFiles_selects_linux_assets_for_specific_rid()
     {
+        var hash = new string('a', 64);
         using var release = JsonDocument.Parse($$"""
             {"tag_name": "v1.2.3", "assets": [
-              {"name": "Filee-1.2.3-SHA256SUMS.txt", "size": 100, "browser_download_url": "{{Base}}Filee-1.2.3-SHA256SUMS.txt"},
-              {"name": "Filee-1.2.3-linux-x64.tar.gz", "size": 2000, "browser_download_url": "{{Base}}Filee-1.2.3-linux-x64.tar.gz"},
-              {"name": "Filee-1.2.3-linux-x64-SHA256SUMS.txt", "size": 90, "browser_download_url": "{{Base}}Filee-1.2.3-linux-x64-SHA256SUMS.txt"},
-              {"name": "Filee-1.2.3-linux-arm64.tar.gz", "size": 1900, "browser_download_url": "{{Base}}Filee-1.2.3-linux-arm64.tar.gz"},
-              {"name": "Filee-1.2.3-linux-arm64-SHA256SUMS.txt", "size": 92, "browser_download_url": "{{Base}}Filee-1.2.3-linux-arm64-SHA256SUMS.txt"}
+              {"name": "Filee-1.2.3-linux-x64.tar.gz", "size": 2000, "digest": "sha256:{{hash}}", "browser_download_url": "{{Base}}Filee-1.2.3-linux-x64.tar.gz"},
+              {"name": "Filee-1.2.3-linux-arm64.tar.gz", "size": 1900, "digest": "sha256:{{hash}}", "browser_download_url": "{{Base}}Filee-1.2.3-linux-arm64.tar.gz"}
             ]}
             """);
 
-        var (installerX64, sumsX64) = UpdateService.FindFiles(release.RootElement, "linux-x64");
+        var installerX64 = UpdateService.FindFiles(release.RootElement, "linux-x64");
         Assert.Equal("Filee-1.2.3-linux-x64.tar.gz", installerX64?.Name);
-        Assert.Equal("Filee-1.2.3-linux-x64-SHA256SUMS.txt", sumsX64?.Name);
+        Assert.Equal(hash, installerX64?.Sha256);
 
-        var (installerArm64, sumsArm64) = UpdateService.FindFiles(release.RootElement, "linux-arm64");
+        var installerArm64 = UpdateService.FindFiles(release.RootElement, "linux-arm64");
         Assert.Equal("Filee-1.2.3-linux-arm64.tar.gz", installerArm64?.Name);
-        Assert.Equal("Filee-1.2.3-linux-arm64-SHA256SUMS.txt", sumsArm64?.Name);
+        Assert.Equal(hash, installerArm64?.Sha256);
 
     }
 
     [Fact]
-    public async Task Checksum_file_for_different_artifact_is_rejected()
+    public async Task Wrong_archive_digest_is_rejected()
     {
         var installerData = RandomNumberGenerator.GetBytes(1000);
         var hash = Sha256(installerData);
         var folder = TempFolder();
 
-        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new FakeLinuxRelease(
-            installerData, hash, sumsArtifact: "Filee-1.2.3-linux-arm64.tar.gz"));
+        var updates = new UpdateService(NullLogger<UpdateService>.Instance, new FakeLinuxRelease(installerData, hash));
         updates.UseRelease(
-            new UpdateService.ReleaseFile("Filee-1.2.3-linux-x64.tar.gz", Base + "Filee-1.2.3-linux-x64.tar.gz", installerData.Length),
-            new UpdateService.ReleaseFile("Filee-1.2.3-linux-x64-SHA256SUMS.txt", Base + "Filee-1.2.3-linux-x64-SHA256SUMS.txt", 100));
+            new UpdateService.ReleaseFile("Filee-1.2.3-linux-x64.tar.gz", Base + "Filee-1.2.3-linux-x64.tar.gz", installerData.Length, new string('0', 64)));
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             updates.DownloadInstallerAsync(folder, null, TestContext.Current.CancellationToken));
@@ -567,7 +540,7 @@ public class UpdateServiceTests
             AddFileEntry(writer, "Filee-9.9.9-linux-x64/filee.png", "png data");
         });
         var hash = Sha256(tarBytes);
-        var network = new FakeLinuxRelease(tarBytes, hash, "Filee-9.9.9-linux-x64.tar.gz", "9.9.9");
+        var network = new FakeLinuxRelease(tarBytes, hash);
 
         var mockInstallDir = TempFolder();
 
@@ -578,8 +551,7 @@ public class UpdateServiceTests
             LinuxInstallDirectoryOverride = mockInstallDir,
         };
         updates.UseRelease(
-            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", tarBytes.Length),
-            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64-SHA256SUMS.txt", Base + "Filee-9.9.9-linux-x64-SHA256SUMS.txt", 100));
+            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", tarBytes.Length, hash));
 
         var processes = new List<ProcessStartInfo>();
         var shutdownRequested = false;
@@ -623,7 +595,7 @@ public class UpdateServiceTests
             AddFileEntry(writer, "Filee-9.9.9-linux-x64/filee.png", "png data");
         });
         var hash = Sha256(tarBytes);
-        var network = new FakeLinuxRelease(tarBytes, hash, "Filee-9.9.9-linux-x64.tar.gz", "9.9.9");
+        var network = new FakeLinuxRelease(tarBytes, hash);
 
         var mockInstallDir = TempFolder();
 
@@ -634,8 +606,7 @@ public class UpdateServiceTests
             LinuxInstallDirectoryOverride = mockInstallDir,
         };
         updates.UseRelease(
-            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", tarBytes.Length),
-            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64-SHA256SUMS.txt", Base + "Filee-9.9.9-linux-x64-SHA256SUMS.txt", 100));
+            new UpdateService.ReleaseFile("Filee-9.9.9-linux-x64.tar.gz", Base + "Filee-9.9.9-linux-x64.tar.gz", tarBytes.Length, hash));
 
         var failedCount = 0;
         updates.UpdateFailed += (_, _) => failedCount++;
@@ -1093,7 +1064,7 @@ public class UpdateServiceTests
         writer.WriteEntry(entry);
     }
 
-    private sealed class FakeLinuxRelease(byte[] archive, string hash, string sumsArtifact = "Filee-9.9.9-linux-x64.tar.gz", string version = "9.9.9") : HttpMessageHandler
+    private sealed class FakeLinuxRelease(byte[] archive, string hash, string version = "9.9.9") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -1102,8 +1073,7 @@ public class UpdateServiceTests
             {
                 var json = $$"""
                     {"tag_name":"v{{version}}","assets":[
-                      {"name":"Filee-{{version}}-linux-x64.tar.gz","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64.tar.gz","size":{{archive.Length}}},
-                      {"name":"Filee-{{version}}-linux-x64-SHA256SUMS.txt","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64-SHA256SUMS.txt","size":100}]}
+                      {"name":"Filee-{{version}}-linux-x64.tar.gz","browser_download_url":"{{Base}}Filee-{{version}}-linux-x64.tar.gz","size":{{archive.Length}},"digest":"sha256:{{hash}}"}]}
                     """;
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -1115,13 +1085,6 @@ public class UpdateServiceTests
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("[]", Encoding.UTF8, "application/json"),
-                });
-            }
-            if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
-            {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent($"{hash}  {sumsArtifact}\n", Encoding.ASCII),
                 });
             }
             if (url.EndsWith(".tar.gz", StringComparison.Ordinal))

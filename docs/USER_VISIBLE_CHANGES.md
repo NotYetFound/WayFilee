@@ -30,7 +30,7 @@ This list describes WayFilee 2.1.0 relative to the Filee version it was forked f
 
 ## Releases and limits
 
-- The build script produces self-contained `linux-x64` and `linux-arm64` `.tar.gz` archives with SHA256 checksums. It omits the old X11 native hook libraries from the archive.
+- The build script produces self-contained `linux-x64` and `linux-arm64` `.tar.gz` archives. GitHub displays each asset's SHA-256 digest. The archives omit the old X11 native hook libraries.
 - Optional converters such as FFmpeg or LibreOffice are not bundled. The **Engines** page can install supported downloads, or use system-provided tools.
 - `.deb`, `.rpm`, and Arch packages are built alongside the archives. The RPM x64 package has been installed and launched on Nobara KDE; Ubuntu, Debian, Arch, and other KDE Wayland distributions remain targets for clean-system installation and upgrade testing.
 

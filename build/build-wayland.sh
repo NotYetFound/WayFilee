@@ -26,9 +26,8 @@ out=${WAYFILEE_OUTPUT:-"$root/Releases"}
 mkdir -p "$out"
 name="Filee-$version-$rid"
 archive="$out/$name.tar.gz"
-sums="$out/$name-SHA256SUMS.txt"
-if [[ -e $archive || -e $sums ]]; then
-    echo "Release files already exist for $name" >&2
+if [[ -e $archive ]]; then
+    echo "Release archive already exists for $name" >&2
     exit 1
 fi
 stage=$(mktemp -d)
@@ -57,6 +56,4 @@ cp "$root/"{LICENSE,THIRD-PARTY-NOTICES.md} "$package/"
 chmod +x "$package/"{install.sh,uninstall.sh}
 
 tar -czf "$archive" -C "$stage" "$name"
-(cd "$out" && sha256sum "$name.tar.gz" > "$name-SHA256SUMS.txt")
 echo "$archive"
-echo "$sums"

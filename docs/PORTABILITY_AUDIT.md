@@ -14,7 +14,7 @@ WayFilee targets KDE Plasma Wayland on Linux x64 and arm64. Fedora/Nobara is the
 
 ## GitHub Release update contract
 
-The app checks GitHub Releases for a newer version and shows release notes. Package builds select the matching RPM, DEB, or Arch asset for their architecture, download it to a private workspace, verify its SHA256 release checksum, and ask `pkexec` to run DNF, APT, or pacman after the app exits. The package manager owns the transaction; the app does not copy package files into `/opt` or `/usr`. If authentication or installation fails, the helper restarts the previous app and records an update failure marker.
+The app checks GitHub Releases for a newer version and shows release notes. Package builds select the matching RPM, DEB, or Arch asset for their architecture, download it to a private workspace, verify its SHA-256 against the digest in GitHub's release API, and ask `pkexec` to run DNF, APT, or pacman after the app exits. The package manager owns the transaction; the app does not copy package files into `/opt` or `/usr`. If authentication or installation fails, the helper restarts the previous app and records an update failure marker.
 
 Package builds use `-p:WayFileePackageKind=deb`, `rpm`, or `arch` so the assembly identifies its package format. They must not include the `.wayfilee-package` marker used by the per-user archive installer. The package manager owns `/opt/wayfilee`, `/usr/bin/wayfilee`, and `/usr/share` integration. CI should inspect emitted assembly metadata, then install version N and upgrade to N+1 on a clean system before claiming the in-app update is proven on that distribution.
 
