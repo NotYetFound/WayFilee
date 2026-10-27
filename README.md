@@ -2,7 +2,7 @@
 
 WayFilee is a KDE Plasma Wayland fork of [Filee](https://github.com/KnifeLemon/Filee), the file converter with a donut toolbar. It keeps Filee's conversion core and native Avalonia app, then adapts the desktop integration for Wayland. There is no browser-based UI or X11 fallback.
 
-Fedora and Nobara KDE are the main test environment. The goal is to work on other Linux distributions running KDE Plasma Wayland, including Ubuntu, Debian, and Arch. Those distributions still need testing; this is a development build.
+Fedora and Nobara KDE are the main test environment. The goal is to work on other Linux distributions running KDE Plasma Wayland, including Ubuntu, Debian, and Arch. Those distributions still need installation and upgrade testing.
 
 ## What changed from Filee
 

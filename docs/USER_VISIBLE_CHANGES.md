@@ -1,13 +1,13 @@
 # User-visible changes from Filee
 
-This list describes the current WayFilee development build relative to the Filee version it was forked from. It covers fork changes a user may notice; it is not a list of all conversions inherited from Filee or a promise that later upstream Filee releases have the same behavior.
+This list describes WayFilee 2.1.0 relative to the Filee version it was forked from. It covers fork changes a user may notice; it is not a list of all conversions inherited from Filee or a promise that later upstream Filee releases have the same behavior.
 
 ## Desktop and launching
 
 - The app, windows, tray, desktop launcher, CLI help, and installer use the **WayFilee** name. Some packaged executable filenames remain `Filee` and `filee-cli`; the installed terminal command is `wayfilee`.
 - The desktop UI uses Avalonia's native Wayland backend. It does not open a web page or run a local web server for its UI.
 - The app requires a KDE Plasma Wayland session. It has no X11 or XWayland fallback, and the active solution no longer builds Windows or macOS editions.
-- The Linux install is per user. It adds a desktop entry, a `~/.local/bin/wayfilee` link, and the WayFilee KWin script. Upgrade and uninstall scripts are included in the archive.
+- The archive installer works per user. It adds a desktop entry, a `~/.local/bin/wayfilee` link, and the WayFilee KWin script. Upgrade and uninstall scripts are included in the archive. System packages install under `/opt/wayfilee` with integration under `/usr/share`.
 - Starting in the background does not create an empty taskbar window. The main window appears when opened, and conversion progress creates a toast only when there is a job to show.
 
 ## Opening and using the donut
@@ -32,6 +32,6 @@ This list describes the current WayFilee development build relative to the Filee
 
 - The build script produces self-contained `linux-x64` and `linux-arm64` `.tar.gz` archives with SHA256 checksums. It omits the old X11 native hook libraries from the archive.
 - Optional converters such as FFmpeg or LibreOffice are not bundled. The **Engines** page can install supported downloads, or use system-provided tools.
-- `.deb`, `.rpm`, and Arch packages are planned. Ubuntu, Debian, Arch, and other KDE Wayland distributions remain targets for portability testing; Fedora/Nobara KDE is the main tested environment.
+- `.deb`, `.rpm`, and Arch packages are built alongside the archives. The RPM x64 package has been installed and launched on Nobara KDE; Ubuntu, Debian, Arch, and other KDE Wayland distributions remain targets for clean-system installation and upgrade testing.
 
 For setup, dependencies, and the implications of input access, see [Linux installation notes](../installer/linux/INSTALL.txt). For inherited Filee features and changes, see the [upstream project](https://github.com/KnifeLemon/Filee).

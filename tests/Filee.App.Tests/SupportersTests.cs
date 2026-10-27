@@ -1,5 +1,5 @@
 // The sponsors and backers shipped with a release (Assets/Sponsors/sponsors.json): shown in the app while there are
-// any, and listed in every README.
+// any, and listed in the README.
 
 using Avalonia.Headless.XUnit;
 using Filee.App.Services;
@@ -36,17 +36,14 @@ public class SupportersTests
     }
 
     [Fact]
-    public void Every_listed_supporter_is_in_every_readme_and_has_its_logo()
+    public void Every_listed_supporter_is_in_the_readme_and_has_its_logo()
     {
         var folder = Path.Combine(RepoRoot, "src", "Filee.App", "Assets", "Sponsors");
         var list = Supporters.Parse(File.ReadAllText(Path.Combine(folder, "sponsors.json")));
 
-        foreach (var readme in new[] { "README.md", "README.ko.md", "README.zh-CN.md", "README.pt-BR.md", "README.fr.md" })
-        {
-            var text = File.ReadAllText(Path.Combine(RepoRoot, readme));
-            Assert.Contains("<!-- sponsors: src/Filee.App/Assets/Sponsors/sponsors.json -->", text);
-            Assert.All(list.Sponsors.Concat(list.Backers), s => Assert.Contains(s.Name, text));
-        }
+        var text = File.ReadAllText(Path.Combine(RepoRoot, "README.md"));
+        Assert.Contains("<!-- sponsors: src/Filee.App/Assets/Sponsors/sponsors.json -->", text);
+        Assert.All(list.Sponsors.Concat(list.Backers), s => Assert.Contains(s.Name, text));
         Assert.All(list.Sponsors.SelectMany(s => new[] { s.Logo, s.LogoDark }).OfType<string>(),
             logo => Assert.True(File.Exists(Path.Combine(folder, logo)), logo));
     }

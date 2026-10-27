@@ -25,7 +25,7 @@ GitHub Release assets are not an APT, DNF, or pacman repository. Discover and or
 - **Fedora/Nobara KDE:** primary interactive test environment; existing archive installer and in-app archive update path have automated tests.
 - **Ubuntu/Debian KDE:** target, not yet validated on clean systems.
 - **Arch KDE:** target, not yet validated on a clean system.
-- **RPM x64:** package builds and its metadata/content/checksum have been inspected locally on Fedora/Nobara; no system installation or upgrade has been attempted yet.
+- **RPM x64:** package metadata, contents, and checksum were inspected locally. WayFilee 2.1.0 was installed and launched on Nobara KDE, with its autostart, Dolphin action, and KWin script paths checked. A synthetic 2.1.1 RPM passed a DNF/RPM upgrade dry run; an actual N→N+1 in-app GitHub update remains untested.
 - **DEB and Arch x64:** packages build locally; content inspection only. Clean-system install and upgrades remain untested.
 - **arm64:** CI build configured; local machine cannot run arm64 packages. Release workflow and installed behavior remain unverified.
 
