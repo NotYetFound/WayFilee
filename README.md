@@ -4,6 +4,18 @@ WayFilee is a KDE Plasma Wayland fork of [Filee](https://github.com/KnifeLemon/F
 
 Fedora and Nobara KDE are the main test environment. The goal is to work on other Linux distributions running KDE Plasma Wayland, including Ubuntu, Debian, and Arch. Those distributions still need installation and upgrade testing.
 
+## See Filee in action
+
+The original Filee demo shows the file conversion workflow. WayFilee uses the same conversion core, but its KDE Wayland donut and windows look different.
+
+<img src="docs/media/demo-en.webp" alt="Filee drag-to-convert demo" width="720">
+
+| Home and recent conversions | Toolbar setup |
+| --- | --- |
+| <img src="docs/media/page-home-en.png" alt="Filee Home page" width="360"> | <img src="docs/media/page-toolbar-dark.png" alt="Filee toolbar settings" width="360"> |
+
+[Watch Filee's short video](https://filee.sh/) on the upstream site.
+
 ## What changed from Filee
 
 | Area | WayFilee |
